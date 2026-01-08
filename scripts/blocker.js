@@ -61,7 +61,12 @@ const AD_SELECTORS = [
   'ytd-in-feed-ad-layout-renderer',
   'ad-button-view-model',
   'top-landscape-image-layout-view-model',
-  '[class*="AdComponentHost"]'
+  '[class*="AdComponentHost"]',
+  '.ytp-ad-survey-container',
+  '.ytp-ad-action-interstitial',
+  '[id^="ad-text:"]',
+  '.ytp-ad-message-container',
+  'ytd-ad-engagement-panel-renderer'
 ];
 
 /**
@@ -330,8 +335,51 @@ const AD_DOMAINS = [
   'googlesyndication.com',
   'googleads4.g.doubleclick.net',
   'adservice.google.com',
-  'doubleclick.net'
+  'doubleclick.net',
+  'pagead2.googlesyndication.com',
+  'ad.doubleclick.net',
+  'securepubads.g.doubleclick.net',
+  'stats.g.doubleclick.net',
+  'cm.g.doubleclick.net'
 ];
+
+/**
+ * Patrones de URL conocidos por servir anuncios o telemetría
+ */
+const AD_URL_PATTERNS = [
+  /googleads/i,
+  /doubleclick/i,
+  /adservice/i,
+  /pagead/i,
+  /ptracking/i,
+  /ad_break/i,
+  /adunit/i,
+  /ads\.js/i,
+  /\/v1\/player\/ad_break/i,
+  /\/api\/stats\/ads/i,
+  /youtube\.com\/pagead\//i,
+  /googlevideo\.com\/videoplayback\?.*&adformat=/i
+];
+
+/**
+ * Verifica si una URL coincide con algún filtro de anuncios
+ */
+function isAdUrl(url) {
+  if (!url) return false;
+  const urlString = String(url);
+  
+  // Verificar dominios
+  if (AD_DOMAINS.some(domain => urlString.includes(domain))) {
+    return true;
+  }
+  
+  // Verificar patrones regex
+  if (AD_URL_PATTERNS.some(pattern => pattern.test(urlString))) {
+    return true;
+  }
+  
+  return false;
+}
 
 /**
  * Bloquea requests de anuncios y limpia respuestas JSON (CORREGIDO)
@@ -351,14 +399,17 @@ const AD_DOMAINS = [
       urlString = url.url;
     }
     
-    if (AD_DOMAINS.some(domain => urlString.includes(domain))) {
+    if (isAdUrl(urlString)) {
       debugLog('🚫 Request publicitario bloqueado (Fetch):', urlString);
       window.notifyAdBlocked?.('request-blocked');
       // Devolver una respuesta vacía exitosa para evitar reintentos infinitos
       return Promise.resolve(new Response('', {
         status: 200,
         statusText: 'OK',
-        headers: new Headers({ 'Content-Type': 'text/plain' })
+        headers: new Headers({ 
+          'Content-Type': 'text/plain',
+          'X-AdBlock-Intercepted': 'true' 
+        })
       }));
     }
     
@@ -400,7 +451,7 @@ const AD_DOMAINS = [
     const xhr = this;
     const url = xhr._url || '';
     
-    if (AD_DOMAINS.some(d => url.includes(d))) {
+    if (isAdUrl(url)) {
       debugLog('🚫 Request publicitario bloqueado (XHR):', url);
       window.notifyAdBlocked?.('request-blocked');
       
@@ -461,16 +512,24 @@ const AD_DOMAINS = [
     window._gaq = window._gaq || [];
     window.google_analytics_low_priority_async = true;
     
-    // Mocks adicionales para estabilidad
+    // Mocks adicionales para estabilidad y anti-detección
     window.canRunAds = true;
     window.google_ad_status = 1;
     window.ytpubads = window.ytpubads || {};
     window.adsbygoogle = window.adsbygoogle || [];
     window.adsbygoogle.loaded = true;
     
+    // Ocultar huellas de automatización/extensión
+    try {
+      if (navigator.webdriver) {
+        Object.defineProperty(navigator, 'webdriver', { get: () => false });
+      }
+    } catch (e) {}
+
     // Simular que el objeto de configuración de anuncios de YT existe
     if (window.yt) {
       window.yt.ads_ = window.yt.ads_ || {};
+      window.yt.adsConfig_ = window.yt.adsConfig_ || { adAllowed: false };
     }
   } catch (e) {}
 })();

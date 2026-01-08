@@ -163,6 +163,67 @@
       "urlFilter": "*/sodar/*",
       "resourceTypes": ["script", "xmlhttprequest", "other"]
     }
+  },
+  {
+    "id": 200,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "*/v1/player/ad_break*",
+      "resourceTypes": ["xmlhttprequest"]
+    }
+  },
+  {
+    "id": 201,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "*/api/stats/ads*",
+      "resourceTypes": ["xmlhttprequest", "image"]
+    }
+  },
+  {
+    "id": 202,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "*/ptracking/*",
+      "resourceTypes": ["xmlhttprequest", "image"]
+    }
+  },
+  {
+    "id": 203,
+    "priority": 1,
+    "action": {
+      "type": "modifyHeaders",
+      "requestHeaders": [
+        { "header": "X-YouTube-Ad-Signals", "operation": "remove" },
+        { "header": "X-Google-Ad-Client-Id", "operation": "remove" },
+        { "header": "X-YouTube-Device-Signals", "operation": "remove" }
+      ]
+    },
+    "condition": {
+      "urlFilter": "*://*.youtube.com/*",
+      "resourceTypes": ["xmlhttprequest", "sub_frame"]
+    }
+  },
+  {
+    "id": 204,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||googleads.g.doubleclick.net^",
+      "resourceTypes": ["xmlhttprequest", "sub_frame", "image", "script"]
+    }
+  },
+  {
+    "id": 205,
+    "priority": 1,
+    "action": { "type": "block" },
+    "condition": {
+      "urlFilter": "||securepubads.g.doubleclick.net^",
+      "resourceTypes": ["xmlhttprequest", "sub_frame", "image", "script"]
+    }
   }
 ]
 
