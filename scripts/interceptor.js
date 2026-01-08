@@ -3,11 +3,17 @@
 // =============================================================================
 
 (function() {
-  const DEBUG_MODE = false;
+  const DEBUG_MODE = true;
+  const PERF_THRESHOLD = 10; // ms
 
-  function debugLog(...args) {
+  function debugLog(level, ...args) {
     if (DEBUG_MODE) {
-      console.log('[Interceptor]', ...args);
+      const timestamp = new Date().toISOString().split('T')[1].split('Z')[0];
+      const prefix = `[Interceptor][${timestamp}][${level}]`;
+      if (level === 'ERROR') console.error(prefix, ...args);
+      else if (level === 'WARN') console.warn(prefix, ...args);
+      else if (level === 'PERF') console.debug(prefix, ...args);
+      else console.log(prefix, ...args);
     }
   }
 
@@ -54,7 +60,7 @@
         dynamicPatterns = (rules.patterns || []).map(p => {
           try { return new RegExp(p, 'i'); } catch(e) { return null; }
         }).filter(Boolean);
-        debugLog('📦 Reglas dinámicas de red cargadas');
+        debugLog('INFO', '📦 Reglas dinámicas de red cargadas');
       }
     }
   });
@@ -75,14 +81,14 @@
     // 2. Verificar reglas dinámicas
     if (dynamicDomains.some(domain => urlString.includes(domain))) return true;
     if (dynamicPatterns.some(pattern => pattern.test(urlString))) return true;
-
+    
     // 3. Heurística para nuevos anuncios (auto-aprendizaje)
     if (urlString.includes('youtube.com/api/stats/ads') || 
         (urlString.includes('googlevideo.com/videoplayback') && urlString.includes('&adformat='))) {
       
       // Si detectamos uno que no estaba en las listas, lo notificamos para guardarlo
       if (!dynamicPatterns.some(p => p.test(urlString))) {
-        debugLog('🔍 Nuevo patrón de anuncio detectado:', urlString);
+        debugLog('INFO', '🔍 Nuevo patrón de anuncio detectado:', urlString);
         // Intentar extraer un patrón útil (ej: el dominio o una parte fija)
         const pattern = urlString.includes('googlevideo.com') ? 
           'googlevideo\\.com\\/videoplayback\\?.*&adformat=' : 
@@ -100,37 +106,58 @@
     return false;
   }
 
-  function pruneAdData(obj, depth = 0) {
-    if (!obj || typeof obj !== 'object' || depth > 20) return obj;
+  function pruneAdData(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
     
+    const startTime = performance.now();
     const keysToPrune = [
       'adPlacements', 'playerAds', 'adSlots', 'adStepRenderer',
       'adBreakService', 'adBreakRenderer', 'masthead',
       'visitAdvertiserLink', 'interstitial'
     ];
 
-    if (Array.isArray(obj)) {
-      // Optimización para arrays grandes: si el primer elemento no parece objeto, saltar
-      if (obj.length > 50 && obj[0] && typeof obj[0] !== 'object') return obj;
-      
-      for (let i = 0; i < obj.length; i++) {
-        obj[i] = pruneAdData(obj[i], depth + 1);
-      }
-      return obj;
-    }
+    let nodesProcessed = 0;
+    const MAX_NODES = 20000; // Límite de seguridad
+    const stack = [{ o: obj, d: 0 }];
 
-    for (const key in obj) {
-      if (keysToPrune.includes(key)) {
-        if (Array.isArray(obj[key])) obj[key] = [];
-        else if (typeof obj[key] === 'object' && obj[key] !== null) obj[key] = {};
-        else delete obj[key];
-      } else {
-        const val = obj[key];
-        // Solo descender si es un objeto o array
-        if (val && typeof val === 'object') {
-          obj[key] = pruneAdData(val, depth + 1);
+    try {
+      while (stack.length > 0 && nodesProcessed < MAX_NODES) {
+        const { o, d } = stack.pop();
+        nodesProcessed++;
+
+        if (!o || typeof o !== 'object' || d > 15) continue;
+
+        if (Array.isArray(o)) {
+          // Optimización: Si es un array muy grande de tipos primitivos, no procesar
+          if (o.length > 100 && typeof o[0] !== 'object' && o[0] !== null) continue;
+          
+          for (let i = o.length - 1; i >= 0; i--) {
+            if (o[i] && typeof o[i] === 'object') {
+              stack.push({ o: o[i], d: d + 1 });
+            }
+          }
+        } else {
+          for (const key in o) {
+            if (keysToPrune.includes(key)) {
+              if (Array.isArray(o[key])) o[key] = [];
+              else if (typeof o[key] === 'object' && o[key] !== null) o[key] = {};
+              else delete o[key];
+            } else {
+              const val = o[key];
+              if (val && typeof val === 'object') {
+                stack.push({ o: val, d: d + 1 });
+              }
+            }
+          }
         }
       }
+    } catch (e) {
+      debugLog('ERROR', 'Error en pruneAdData:', e);
+    }
+
+    const duration = performance.now() - startTime;
+    if (duration > PERF_THRESHOLD) {
+      debugLog('PERF', `pruneAdData tomó ${duration.toFixed(2)}ms (${nodesProcessed} nodos)`);
     }
     return obj;
   }
@@ -149,7 +176,7 @@
     else if (url instanceof Request) urlString = url.url;
     
     if (isAdUrl(urlString)) {
-      debugLog('🚫 Request bloqueado (Fetch):', urlString);
+      debugLog('INFO', '🚫 Request bloqueado (Fetch):', urlString);
       notifyAdBlocked('request-blocked-fetch');
       return Promise.resolve(new Response('', {
         status: 200, statusText: 'OK',
@@ -168,10 +195,16 @@
           return new Response(JSON.stringify(json), {
             status: response.status, statusText: response.statusText, headers: response.headers
           });
-        } catch (e) { return response; }
+        } catch (e) { 
+          debugLog('ERROR', 'Error al procesar JSON en Fetch:', e);
+          return response; 
+        }
       }
       return response;
-    } catch (error) { throw error; }
+    } catch (error) { 
+      debugLog('ERROR', 'Error en Fetch interceptado:', error);
+      throw error; 
+    }
   };
 
   // Interceptar XMLHttpRequest
@@ -186,7 +219,7 @@
     const xhr = this;
     const url = xhr._url || '';
     if (isAdUrl(url)) {
-      debugLog('🚫 Request bloqueado (XHR):', url);
+      debugLog('INFO', '🚫 Request bloqueado (XHR):', url);
       notifyAdBlocked('request-blocked-xhr');
       setTimeout(() => {
         try {
@@ -210,7 +243,9 @@
             const pruned = pruneAdData(json);
             Object.defineProperty(xhr, 'responseText', { value: JSON.stringify(pruned), configurable: true });
             Object.defineProperty(xhr, 'response', { value: JSON.stringify(pruned), configurable: true });
-          } catch (e) {}
+          } catch (e) {
+            debugLog('ERROR', 'Error al procesar JSON en XHR:', e);
+          }
         }
       });
     }

@@ -2,16 +2,40 @@
 // Lógica principal de detección y bloqueo de anuncios
 // =============================================================================
 
-const DEBUG_MODE = false;
+const DEBUG_MODE = true;
+const PERF_THRESHOLD = 15; // ms (un poco más alto para el DOM)
 
 /**
- * Log personalizado para depuración (solo se muestra si DEBUG_MODE es true)
+ * Log personalizado para depuración
  */
-function debugLog(...args) {
+function debugLog(level, ...args) {
   if (DEBUG_MODE) {
-    console.log(...args);
+    const timestamp = new Date().toISOString().split('T')[1].split('Z')[0];
+    const prefix = `[Blocker][${timestamp}][${level}]`;
+    if (level === 'ERROR') console.error(prefix, ...args);
+    else if (level === 'WARN') console.warn(prefix, ...args);
+    else if (level === 'PERF') console.debug(prefix, ...args);
+    else console.log(prefix, ...args);
   }
 }
+
+/**
+ * Monitor de rendimiento (Watchdog) para detectar bloqueos del hilo principal
+ */
+(function setupWatchdog() {
+  if (!DEBUG_MODE) return;
+  let lastTime = performance.now();
+  function check() {
+    const now = performance.now();
+    const diff = now - lastTime;
+    if (diff > 100) { // Si el salto entre frames es > 100ms
+      debugLog('WARN', `⚠️ Posible bloqueo detectado: ${diff.toFixed(2)}ms sin responder`);
+    }
+    lastTime = now;
+    requestAnimationFrame(check);
+  }
+  requestAnimationFrame(check);
+})();
 
 /**
  * Selectores CSS de elementos publicitarios en YouTube (CORREGIDOS)
@@ -79,7 +103,7 @@ async function loadDynamicSelectors() {
     const data = await chrome.storage.local.get('dynamic_ad_rules');
     if (data.dynamic_ad_rules && data.dynamic_ad_rules.selectors) {
       dynamicSelectors = data.dynamic_ad_rules.selectors;
-      debugLog('📦 Selectores dinámicos cargados:', dynamicSelectors.length);
+      debugLog('INFO', '📦 Selectores dinámicos cargados:', dynamicSelectors.length);
     }
   } catch (e) {
     // Silenciar errores en contextos restringidos
@@ -101,7 +125,7 @@ function skipVideoAd() {
     
     // 1. Intentar hacer clic en el botón de saltar
     if (skipButton && skipButton.offsetParent !== null) {
-      debugLog('⏭️ Saltando anuncio de video (botón)');
+      debugLog('INFO', '⏭️ Saltando anuncio de video (botón)');
       skipButton.click();
       window.notifyAdBlocked?.('video-ad-skipped');
       return true;
@@ -118,7 +142,7 @@ function skipVideoAd() {
         // Esto evita que se asigne el mismo valor repetidamente
         if (video.currentTime < video.duration - 0.5) {
           video.currentTime = video.duration;
-          debugLog('⏩ Adelantando anuncio al final');
+          debugLog('INFO', '⏩ Adelantando anuncio al final');
           window.notifyAdBlocked?.('video-ad-fast-forward');
           return true;
         }
@@ -126,7 +150,7 @@ function skipVideoAd() {
         // Si no tenemos duración, al menos pausamos si es necesario
         if (!video.paused) {
           video.pause();
-          debugLog('⏸️ Pausando anuncio de video (duración desconocida)');
+          debugLog('INFO', '⏸️ Pausando anuncio de video (duración desconocida)');
           window.notifyAdBlocked?.('video-ad-paused');
           return true;
         }
@@ -135,7 +159,7 @@ function skipVideoAd() {
       // Restaurar velocidad si el anuncio terminó y quedó en 16x
       video.playbackRate = 1;
       video.muted = false;
-      debugLog('▶️ Restaurando velocidad normal');
+      debugLog('INFO', '▶️ Restaurando velocidad normal');
     }
     
     return false;
@@ -193,54 +217,72 @@ function isAdPlaying() {
  * Oculta elementos publicitarios del DOM
  */
 function hideAdElements() {
+  const startTime = performance.now();
   let hiddenCount = 0;
   
-  const selectors = [...AD_SELECTORS, ...dynamicSelectors];
+  const allSelectors = [...AD_SELECTORS, ...dynamicSelectors];
+  const combinedSelector = allSelectors.join(',');
+  
   const shadowHosts = ['ytd-app', '#movie_player', 'ytd-player', '.html5-video-player'];
   const hosts = shadowHosts.map(s => document.querySelector(s)).filter(h => h && h.shadowRoot);
   
-  selectors.forEach(selector => {
-    try {
-      // Buscar en el documento principal
-      let elements = Array.from(document.querySelectorAll(selector));
-      
-      // Buscar en Shadow DOM de contenedores críticos (YouTube los usa mucho)
-      hosts.forEach(host => {
-        try {
-          const shadowElements = host.shadowRoot.querySelectorAll(selector);
-          if (shadowElements.length > 0) {
-            elements = elements.concat(Array.from(shadowElements));
-          }
-        } catch (e) {}
-      });
-      
-      elements.forEach(element => {
-        if (element && element.style.display !== 'none') {
-          element.style.setProperty('display', 'none', 'important');
-          element.style.setProperty('visibility', 'hidden', 'important');
-          
-          // Marcar como procesado para evitar logs repetitivos
-          if (!element.hasAttribute('data-ad-hidden')) {
-            element.setAttribute('data-ad-hidden', 'true');
-            hiddenCount++;
-          }
+  try {
+    // 1. Buscar en el documento principal (usando el selector combinado es mucho más rápido)
+    let elements = Array.from(document.querySelectorAll(combinedSelector));
+    
+    // 2. Buscar en Shadow DOM de contenedores críticos
+    hosts.forEach(host => {
+      try {
+        const shadowElements = host.shadowRoot.querySelectorAll(combinedSelector);
+        if (shadowElements.length > 0) {
+          elements = elements.concat(Array.from(shadowElements));
         }
-      });
-    } catch (error) {
-      // Silenciar errores de selectores inválidos
-    }
-  });
+      } catch (e) {}
+    });
+    
+    elements.forEach(element => {
+      if (element && element.style.display !== 'none') {
+        element.style.setProperty('display', 'none', 'important');
+        element.style.setProperty('visibility', 'hidden', 'important');
+        
+        if (!element.hasAttribute('data-ad-hidden')) {
+          element.setAttribute('data-ad-hidden', 'true');
+          hiddenCount++;
+        }
+      }
+    });
+  } catch (error) {
+    // Si falla el selector combinado, volvemos al método uno por uno como fallback
+    allSelectors.forEach(selector => {
+      try {
+        document.querySelectorAll(selector).forEach(el => {
+          if (el.style.display !== 'none') {
+             el.style.setProperty('display', 'none', 'important');
+             if (!el.hasAttribute('data-ad-hidden')) {
+               el.setAttribute('data-ad-hidden', 'true');
+               hiddenCount++;
+             }
+          }
+        });
+      } catch (e) {}
+    });
+  }
   
   if (hiddenCount > 0) {
-    debugLog(`🙈 Ocultados ${hiddenCount} elementos publicitarios`);
+    debugLog('INFO', `🙈 Ocultados ${hiddenCount} elementos publicitarios`);
     window.notifyAdBlocked?.('elements-hidden');
   }
 
-  // Ejecutar descubrimiento de nuevos anuncios (aprendizaje dinámico) con requestIdleCallback si es posible
+  const duration = performance.now() - startTime;
+  if (duration > PERF_THRESHOLD) {
+    debugLog('PERF', `hideAdElements tomó ${duration.toFixed(2)}ms`);
+  }
+
+  // Ejecutar descubrimiento con baja prioridad
   if (window.requestIdleCallback) {
-    window.requestIdleCallback(() => discoverNewAds(), { timeout: 500 });
+    window.requestIdleCallback(() => discoverNewAds(), { timeout: 1000 });
   } else {
-    setTimeout(discoverNewAds, 100);
+    setTimeout(discoverNewAds, 500);
   }
 }
 
@@ -248,49 +290,69 @@ function hideAdElements() {
  * Busca elementos que parezcan anuncios basándose en heurísticas de texto (auto-aprendizaje)
  */
 function discoverNewAds() {
+  const startTime = performance.now();
   const adTerms = ['Anuncio', 'Publicidad', 'Sponsored', 'Sponsoreado', 'Promocionado', 'Patrocinado'];
-  // Solo buscar en elementos que suelen ser contenedores de anuncios
-  const potentialAds = document.querySelectorAll('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-rich-section-renderer, ytd-ad-slot-renderer');
   
-  potentialAds.forEach(el => {
-    if (el.style.display === 'none' || el.hasAttribute('data-ad-hidden')) return;
-    
-    // Heurística de texto: buscar marcas de anuncios (usar textContent es más rápido que innerText)
-    const textContent = el.textContent || "";
-    const hasAdTerm = adTerms.some(term => textContent.includes(term));
-    
-    if (hasAdTerm) {
-      debugLog('🎯 Nuevo anuncio potencial detectado por heurística:', el);
-      
-      // Ocultar inmediatamente
-      el.style.setProperty('display', 'none', 'important');
-      el.setAttribute('data-ad-hidden', 'true');
-      
-      // Intentar identificar un selector robusto
-      const tagName = el.tagName.toLowerCase();
-      let selector = '';
-      
-      if (el.querySelector('[class*="ad-"]') || el.querySelector('[id*="ad-"]')) {
-        selector = `${tagName}:has([class*="ad-"], [id*="ad-"])`;
-      } else if (el.querySelector('.ytd-badge-supported-renderer')) {
-         selector = `${tagName}:has(.ytd-badge-supported-renderer)`;
-      } else {
-        // Selector genérico si no hay nada más específico
-        selector = tagName;
-      }
-
-      // Notificar al background si es nuevo y no está en las listas estáticas
-      if (selector && !AD_SELECTORS.includes(selector) && !dynamicSelectors.includes(selector)) {
-        debugLog('✨ Guardando nuevo selector dinámico:', selector);
-        chrome.runtime.sendMessage({
-          action: 'addDynamicRule',
-          ruleType: 'selectors',
-          rule: selector
-        }).catch(() => {});
-        dynamicSelectors.push(selector);
-      }
+  // 1. Buscar primero elementos con badges conocidos (más rápido que texto completo)
+  const knownAdBadges = document.querySelectorAll('.ytd-badge-supported-renderer:not([data-ad-checked]), [class*="badge-style-type-ad"]:not([data-ad-checked])');
+  
+  knownAdBadges.forEach(badge => {
+    badge.setAttribute('data-ad-checked', 'true');
+    // Encontrar el contenedor (renderer)
+    const container = badge.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-rich-section-renderer, ytd-ad-slot-renderer');
+    if (container && container.style.display !== 'none' && !container.hasAttribute('data-ad-hidden')) {
+      debugLog('INFO', '🎯 Anuncio detectado por badge:', container.tagName);
+      hideElementSafely(container);
     }
   });
+
+  // 2. Heurística de texto (solo en elementos no procesados y con moderación)
+  // Limitar a los primeros N elementos para evitar bloqueos prolongados
+  const potentialAds = Array.from(document.querySelectorAll('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-ad-slot-renderer'))
+                        .filter(el => el.style.display !== 'none' && !el.hasAttribute('data-ad-hidden'))
+                        .slice(0, 10); // Solo 10 por ciclo para no saturar
+  
+  potentialAds.forEach(el => {
+    const text = el.textContent || "";
+    if (adTerms.some(term => text.includes(term))) {
+      debugLog('INFO', '🎯 Anuncio detectado por texto:', el.tagName);
+      hideElementSafely(el);
+    }
+  });
+
+  const duration = performance.now() - startTime;
+  if (duration > PERF_THRESHOLD) {
+    debugLog('PERF', `discoverNewAds tomó ${duration.toFixed(2)}ms`);
+  }
+}
+
+/**
+ * Oculta un elemento y guarda su selector si es posible
+ */
+function hideElementSafely(el) {
+  el.style.setProperty('display', 'none', 'important');
+  el.setAttribute('data-ad-hidden', 'true');
+  
+  const tagName = el.tagName.toLowerCase();
+  let selector = '';
+  
+  if (el.querySelector('[class*="ad-"]') || el.querySelector('[id*="ad-"]')) {
+    selector = `${tagName}:has([class*="ad-"], [id*="ad-"])`;
+  } else if (el.querySelector('.ytd-badge-supported-renderer')) {
+    selector = `${tagName}:has(.ytd-badge-supported-renderer)`;
+  } else {
+    selector = tagName;
+  }
+
+  if (selector && !AD_SELECTORS.includes(selector) && !dynamicSelectors.includes(selector)) {
+    debugLog('INFO', '✨ Guardando nuevo selector dinámico:', selector);
+    chrome.runtime.sendMessage({
+      action: 'addDynamicRule',
+      ruleType: 'selectors',
+      rule: selector
+    }).catch(() => {});
+    dynamicSelectors.push(selector);
+  }
 }
 
 /**
@@ -306,7 +368,7 @@ function removeAdOverlays() {
     overlays.forEach(overlay => {
       if (overlay.parentNode) {
         overlay.parentNode.removeChild(overlay);
-        debugLog('🗑️ Overlay publicitario eliminado');
+        debugLog('INFO', '🗑️ Overlay publicitario eliminado');
         window.notifyAdBlocked?.('overlay-removed');
       }
     });
@@ -319,7 +381,7 @@ function removeAdOverlays() {
     banners.forEach(banner => {
       if (banner.parentNode) {
         banner.parentNode.removeChild(banner);
-        debugLog('🗑️ Banner publicitario eliminado');
+        debugLog('INFO', '🗑️ Banner publicitario eliminado');
       }
     });
   } catch (error) {
@@ -331,130 +393,39 @@ function removeAdOverlays() {
  * Limpia espacios vacíos dejados por anuncios bloqueados
  */
 function cleanupEmptySpaces() {
+  const startTime = performance.now();
   const containers = document.querySelectorAll(
     'ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-rich-section-renderer'
   );
   
+  const adChildSelector = 'ytd-ad-slot-renderer, ytd-display-ad-renderer, ytd-promoted-sparkles-web-renderer, [class*="AdComponent"]';
+  const visibleContentSelector = 'img, video, [class*="thumbnail"], #video-title';
+
   containers.forEach(container => {
+    if (container.style.display === 'none') return;
+
     // 1. Verificar si contiene elementos explícitos de anuncios
-    const adChildren = container.querySelectorAll('ytd-ad-slot-renderer, ytd-display-ad-renderer, ytd-promoted-sparkles-web-renderer, [class*="AdComponent"]');
-    if (adChildren.length > 0) {
+    const hasAdChild = container.querySelector(adChildSelector);
+    if (hasAdChild) {
       container.style.setProperty('display', 'none', 'important');
       return;
     }
 
     // 2. Si el contenedor no tiene contenido visual legítimo, ocultarlo
-    const hasVisibleContent = container.querySelector('img, video, [class*="thumbnail"], #video-title');
+    const hasVisibleContent = container.querySelector(visibleContentSelector);
     if (!hasVisibleContent) {
-      // Verificar si hay texto que no sea solo "Patrocinado" o similar
       const text = container.textContent?.trim() || "";
       if (text === "" || text.includes("Patrocinado") || text.includes("Sponsored") || text.length < 5) {
         container.style.setProperty('display', 'none', 'important');
       }
     }
   });
+
+  const duration = performance.now() - startTime;
+  if (duration > PERF_THRESHOLD) {
+    debugLog('PERF', `cleanupEmptySpaces tomó ${duration.toFixed(2)}ms`);
+  }
 }
-
-/**
- * Intercepta y modifica objetos JSON para eliminar datos de anuncios (JSON Pruning)
- */
-function pruneAdData(obj, depth = 0) {
-  if (!obj || typeof obj !== 'object' || depth > 20) return obj;
-
-  const keysToPrune = [
-    'adPlacements', 'playerAds', 'adSlots', 'adStepRenderer',
-    'adBreakService', 'adBreakRenderer', 'masthead',
-    'visitAdvertiserLink', 'interstitial'
-  ];
-
-  if (Array.isArray(obj)) {
-    if (obj.length > 50 && obj[0] && typeof obj[0] !== 'object') return obj;
-    for (let i = 0; i < obj.length; i++) {
-      obj[i] = pruneAdData(obj[i], depth + 1);
-    }
-    return obj;
-  }
-
-  for (const key in obj) {
-    if (keysToPrune.includes(key)) {
-      if (Array.isArray(obj[key])) obj[key] = [];
-      else if (typeof obj[key] === 'object' && obj[key] !== null) obj[key] = {};
-      else delete obj[key];
-    } else {
-      const val = obj[key];
-      if (val && typeof val === 'object') {
-        obj[key] = pruneAdData(val, depth + 1);
-      }
-    }
-  }
-  return obj;
-}
-
-const AD_DOMAINS = [
-  'googleads.g.doubleclick.net',
-  'static.doubleclick.net',
-  'googleadservices.com',
-  'googlesyndication.com',
-  'googleads4.g.doubleclick.net',
-  'adservice.google.com',
-  'doubleclick.net',
-  'pagead2.googlesyndication.com',
-  'ad.doubleclick.net',
-  'securepubads.g.doubleclick.net',
-  'stats.g.doubleclick.net',
-  'cm.g.doubleclick.net'
-];
-
-/**
- * Patrones de URL conocidos por servir anuncios o telemetría
- */
-const AD_URL_PATTERNS = [
-  /googleads/i,
-  /doubleclick/i,
-  /adservice/i,
-  /pagead/i,
-  /ptracking/i,
-  /ad_break/i,
-  /adunit/i,
-  /ads\.js/i,
-  /\/v1\/player\/ad_break/i,
-  /\/api\/stats\/ads/i,
-  /youtube\.com\/pagead\//i,
-  /googlevideo\.com\/videoplayback\?.*&adformat=/i
-];
-
-/**
- * Verifica si una URL coincide con algún filtro de anuncios
- */
-function isAdUrl(url) {
-  if (!url) return false;
-  const urlString = String(url);
-  
-  // Verificar dominios
-  if (AD_DOMAINS.some(domain => urlString.includes(domain))) {
-    return true;
-  }
-  
-  // Verificar patrones regex
-  if (AD_URL_PATTERNS.some(pattern => pattern.test(urlString))) {
-    return true;
-  }
-  
-  return false;
-}
-
-/**
- * Bloquea requests de anuncios y limpia respuestas JSON (DEPURADO - Movido a interceptor.js para MAIN world)
- */
-(function setupInterceptors() {
-  // Ocultar huellas de automatización/extensión (mantenemos esto en el isolated world si es necesario, 
-  // aunque es mejor en el main world. Por ahora lo dejamos vacío o lo movemos).
-  try {
-    // Mocks adicionales para estabilidad y anti-detección
-    window.canRunAds = true;
-    window.google_ad_status = 1;
-  } catch (e) {}
-})();
 
 /**
  * Estilo CSS adicional para ocultar anuncios
@@ -532,7 +503,7 @@ function isAdUrl(url) {
   `;
   
   (document.head || document.documentElement).appendChild(style);
-  debugLog('💉 Estilos de bloqueo inyectados');
+  debugLog('INFO', '💉 Estilos de bloqueo inyectados');
 })();
 
 /**

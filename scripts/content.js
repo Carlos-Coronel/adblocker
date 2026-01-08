@@ -5,9 +5,12 @@
 /**
  * Log personalizado para depuración (usa el de blocker.js si está disponible)
  */
-function contentLog(...args) {
+function contentLog(level, ...args) {
   if (typeof debugLog === 'function') {
-    debugLog(...args);
+    debugLog(level, ...args);
+  } else {
+    const timestamp = new Date().toISOString().split('T')[1].split('Z')[0];
+    console.log(`[Content][${timestamp}][${level}]`, ...args);
   }
 }
 
@@ -72,11 +75,18 @@ function startDOMObserver() {
   }
 
   observer = new MutationObserver((mutations) => {
+    let hasAdditions = false;
     for (const mutation of mutations) {
-      if (mutation.addedNodes && mutation.addedNodes.length) {
-        scheduleCheck();
+      if (mutation.addedNodes && mutation.addedNodes.length > 0) {
+        hasAdditions = true;
         break;
       }
+    }
+
+    if (hasAdditions) {
+      // Ajustar delay según volumen de mutaciones
+      const delay = mutations.length > 100 ? 500 : 100;
+      scheduleCheck(delay);
     }
   });
 
@@ -86,7 +96,7 @@ function startDOMObserver() {
       childList: true,
       subtree: true
     });
-    contentLog('👁️ Observador de DOM iniciado');
+    contentLog('INFO', '👁️ Observador de DOM iniciado');
   } else {
     // Reintentar pronto si aún no hay body
     setTimeout(startDOMObserver, 100);
@@ -100,10 +110,14 @@ function scheduleCheck(delay = 100) {
   if (debouncedCheck) {
     clearTimeout(debouncedCheck);
   }
+  
+  // Aumentar delay si estamos navegando para no competir con YouTube
+  const currentDelay = window._isNavigating ? Math.max(delay, 800) : delay;
+  
   debouncedCheck = setTimeout(() => {
     debouncedCheck = null;
     if (isEnabled) checkForAds();
-  }, delay);
+  }, currentDelay);
 }
 
 /**
@@ -158,25 +172,28 @@ function cleanupObservers() {
  * Escucha cambios de navegación en YouTube (SPA)
  */
 function listenToNavigation() {
-  // YouTube es una SPA, usamos sus eventos personalizados para mayor eficiencia
-  const handleNav = () => {
-    const url = location.href;
-    contentLog('📍 Navegación detectada:', url);
+  const handleNavStart = () => {
+    window._isNavigating = true;
+  };
 
-    // Reiniciar observadores y chequeos para la nueva vista
+  const handleNavFinish = () => {
+    window._isNavigating = false;
+    const url = location.href;
+    contentLog('INFO', '📍 Navegación detectada:', url);
+
     cleanupObservers();
     startDOMObserver();
     startPeriodicCheck();
-    // Hacer un chequeo inicial tras un breve retraso
-    setTimeout(() => { scheduleCheck(150); }, 500);
+    setTimeout(() => { scheduleCheck(300); }, 1000);
   };
 
-  window.addEventListener('yt-navigate-finish', handleNav);
-  window.addEventListener('sp-navigate-finish', handleNav); // Variante para algunos contextos
+  window.addEventListener('yt-navigate-start', handleNavStart);
+  window.addEventListener('yt-navigate-finish', handleNavFinish);
+  window.addEventListener('sp-navigate-finish', handleNavFinish);
   
-  // Como fallback para casos raros o navegación de historial estándar
   window.addEventListener('popstate', () => {
-    setTimeout(() => { scheduleCheck(200); }, 500);
+    window._isNavigating = false;
+    setTimeout(() => { scheduleCheck(500); }, 500);
   });
 }
 
@@ -185,17 +202,31 @@ function listenToNavigation() {
  */
 function checkForAds() {
   const now = Date.now();
+  const startTime = performance.now();
   
   // 1. Saltar anuncios de video (Prioridad ALTA)
-  if (typeof skipVideoAd === 'function') skipVideoAd();
+  try {
+    if (typeof skipVideoAd === 'function') skipVideoAd();
+  } catch (e) {
+    contentLog('ERROR', 'Error en skipVideoAd:', e);
+  }
   
     // 2. Otras tareas de limpieza (Prioridad MEDIA - cada 1s aprox)
     if (!window._lastDeepClean || (now - window._lastDeepClean > 1000)) {
         window._lastDeepClean = now;
-        if (typeof hideAdElements === 'function') hideAdElements();
-        if (typeof removeAdOverlays === 'function') removeAdOverlays();
-        if (typeof cleanupEmptySpaces === 'function') cleanupEmptySpaces();
-        injectBypassButton();
+        try {
+            if (typeof hideAdElements === 'function') hideAdElements();
+            if (typeof removeAdOverlays === 'function') removeAdOverlays();
+            if (typeof cleanupEmptySpaces === 'function') cleanupEmptySpaces();
+            injectBypassButton();
+        } catch (e) {
+            contentLog('ERROR', 'Error en tareas de limpieza profunda:', e);
+        }
+    }
+
+    const duration = performance.now() - startTime;
+    if (duration > 20) { // Umbral ligeramente mayor para content script
+        contentLog('PERF', `checkForAds tomó ${duration.toFixed(2)}ms`);
     }
 }
 
@@ -219,7 +250,7 @@ function injectBypassButton() {
     
     // Insertar el botón
     target.parentElement.insertBefore(bypassBtn, target.nextSibling);
-    contentLog('🚀 Botón de Bypass Alternativo inyectado');
+    contentLog('INFO', '🚀 Botón de Bypass Alternativo inyectado');
 }
 
 /**
