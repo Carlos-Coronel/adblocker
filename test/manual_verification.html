@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Test de Verificación - YouTube AdBlocker</title>
+    <style>
+        body { font-family: sans-serif; padding: 20px; }
+        .test-case { border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
+        .success { color: green; font-weight: bold; }
+        .failure { color: red; font-weight: bold; }
+        .ad-element { background: #fee; border: 1px solid red; padding: 5px; margin: 5px; }
+        #results { margin-top: 20px; border-top: 2px solid #333; padding-top: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Panel de Verificación de AdBlocker</h1>
+    
+    <div class="test-case">
+        <h3>1. Elementos Publicitarios (DOM)</h3>
+        <div id="test-dom">
+            <div class="video-ads" id="ad1">Anuncio de Video</div>
+            <ytd-display-ad-renderer id="ad2">Anuncio de Display</ytd-display-ad-renderer>
+            <div class="ytd-promoted-video-renderer" id="ad3">Video Promocionado</div>
+            <div id="player-ads">Anuncios del Reproductor</div>
+        </div>
+        <button onclick="runDomTest()">Ejecutar Test DOM</button>
+    </div>
+
+    <div class="test-case">
+        <h3>2. Intercepción de Fetch</h3>
+        <p>Intenta hacer fetch a un dominio bloqueado (ver consola).</p>
+        <button onclick="runFetchTest()">Ejecutar Test Fetch</button>
+    </div>
+
+    <div class="test-case">
+        <h3>3. JSON Pruning</h3>
+        <p>Prueba la poda de datos de anuncios en un objeto JSON.</p>
+        <button onclick="runJsonPruningTest()">Ejecutar Test JSON</button>
+    </div>
+
+    <div class="test-case">
+        <h3>4. Limpieza de Espacios Vacíos</h3>
+        <div id="test-grid" style="display: grid; grid-template-columns: 1fr 1fr;">
+            <ytd-rich-item-renderer id="grid-item-1">
+                <div>Video Real 1</div>
+                <img src="video1.jpg" style="width:100px; height:100px;">
+                <div id="video-title">Título del Video 1</div>
+            </ytd-rich-item-renderer>
+            <ytd-rich-item-renderer id="grid-item-ad">
+                <ytd-ad-slot-renderer>Anuncio</ytd-ad-slot-renderer>
+            </ytd-rich-item-renderer>
+        </div>
+        <button onclick="runCleanupTest()">Ejecutar Test Limpieza</button>
+    </div>
+
+    <div id="results">
+        <h2>Resultados:</h2>
+        <ul id="results-list"></ul>
+    </div>
+
+    <!-- Mocks de APIs de Chrome -->
+    <script>
+        window.chrome = {
+            runtime: {
+                sendMessage: (msg) => {
+                    console.log("Mock sendMessage:", msg);
+                    return Promise.resolve({ success: true });
+                }
+            },
+            storage: {
+                local: {
+                    get: () => Promise.resolve({ adblock_enabled: true }),
+                    set: () => Promise.resolve()
+                }
+            }
+        };
+        
+        // Mock notifyAdBlocked (normalmente definido en content.js)
+        window.notifyAdBlocked = (type) => {
+            console.log("Notificación de bloqueo:", type);
+            const li = document.createElement('li');
+            li.className = 'success';
+            li.textContent = "Evento detectado: " + type;
+            document.getElementById('results-list').appendChild(li);
+        };
+    </script>
+
+    <!-- Cargar el script a probar -->
+    <script src="../scripts/blocker.js"></script>
+
+    <script>
+        function runDomTest() {
+            console.log("Iniciando Test DOM...");
+            const ads = [
+                document.getElementById('ad1'),
+                document.getElementById('ad2'),
+                document.getElementById('ad3'),
+                document.getElementById('player-ads')
+            ];
+            
+            // Ejecutar la función de bloqueo
+            if (typeof hideAdElements === 'function') {
+                hideAdElements();
+                
+                const resultsList = document.getElementById('results-list');
+                let allHidden = true;
+                
+                ads.forEach(ad => {
+                    const isHidden = window.getComputedStyle(ad).display === 'none';
+                    const li = document.createElement('li');
+                    if (isHidden) {
+                        li.className = 'success';
+                        li.textContent = "✅ Elemento " + ad.id + " ocultado correctamente.";
+                    } else {
+                        li.className = 'failure';
+                        li.textContent = "❌ ERROR: Elemento " + ad.id + " NO se ocultó.";
+                        allHidden = false;
+                    }
+                    resultsList.appendChild(li);
+                });
+            } else {
+                alert("La función hideAdElements no está definida");
+            }
+        }
+
+        async function runFetchTest() {
+            const url = "https://googleads.g.doubleclick.net/pagead/ads";
+            const resultsList = document.getElementById('results-list');
+            const li = document.createElement('li');
+            
+            try {
+                await fetch(url);
+                li.className = 'failure';
+                li.textContent = "❌ ERROR: Fetch a " + url + " NO fue bloqueado.";
+            } catch (e) {
+                li.className = 'success';
+                li.textContent = "✅ Fetch a " + url + " bloqueado correctamente: " + e.message;
+            }
+            resultsList.appendChild(li);
+        }
+
+        function runJsonPruningTest() {
+            const testObj = {
+                videoDetails: { title: "Test Video" },
+                adPlacements: [ { some: "ad data" } ],
+                playerAds: [ { more: "ads" } ],
+                streamingData: { formats: [] }
+            };
+            
+            if (typeof pruneAdData === 'function') {
+                const pruned = pruneAdData(JSON.parse(JSON.stringify(testObj)));
+                const resultsList = document.getElementById('results-list');
+                const li = document.createElement('li');
+                
+                if (!pruned.adPlacements && !pruned.playerAds && pruned.videoDetails) {
+                    li.className = 'success';
+                    li.textContent = "✅ JSON podado correctamente (adPlacements y playerAds eliminados).";
+                } else {
+                    li.className = 'failure';
+                    li.textContent = "❌ ERROR: El JSON no se podó correctamente.";
+                }
+                resultsList.appendChild(li);
+            } else {
+                alert("La función pruneAdData no está definida");
+            }
+        }
+
+        function runCleanupTest() {
+            console.log("Iniciando Test Limpieza...");
+            if (typeof cleanupEmptySpaces === 'function') {
+                cleanupEmptySpaces();
+                
+                const item1 = document.getElementById('grid-item-1');
+                const itemAd = document.getElementById('grid-item-ad');
+                const resultsList = document.getElementById('results-list');
+                
+                // Item 1 debería seguir visible
+                if (window.getComputedStyle(item1).display !== 'none') {
+                    const li = document.createElement('li');
+                    li.className = 'success';
+                    li.textContent = "✅ Contenido legítimo se mantiene visible.";
+                    resultsList.appendChild(li);
+                } else {
+                    const li = document.createElement('li');
+                    li.className = 'failure';
+                    li.textContent = "❌ ERROR: Contenido legítimo fue ocultado por error.";
+                    resultsList.appendChild(li);
+                }
+                
+                // Item Ad debería estar oculto
+                if (window.getComputedStyle(itemAd).display === 'none') {
+                    const li = document.createElement('li');
+                    li.className = 'success';
+                    li.textContent = "✅ Contenedor de anuncio ocultado correctamente.";
+                    resultsList.appendChild(li);
+                } else {
+                    const li = document.createElement('li');
+                    li.className = 'failure';
+                    li.textContent = "❌ ERROR: Contenedor de anuncio sigue visible.";
+                    resultsList.appendChild(li);
+                }
+            } else {
+                alert("La función cleanupEmptySpaces no está definida");
+            }
+        }
+    </script>
+</body>
+</html>
