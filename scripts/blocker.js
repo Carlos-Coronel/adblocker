@@ -382,155 +382,15 @@ function isAdUrl(url) {
 }
 
 /**
- * Bloquea requests de anuncios y limpia respuestas JSON (CORREGIDO)
+ * Bloquea requests de anuncios y limpia respuestas JSON (DEPURADO - Movido a interceptor.js para MAIN world)
  */
 (function setupInterceptors() {
-  // 1. Interceptar Fetch
-  const originalFetch = window.fetch;
-  window.fetch = async function(...args) {
-    const url = args[0];
-    let urlString = '';
-
-    if (typeof url === 'string') {
-      urlString = url;
-    } else if (url instanceof URL) {
-      urlString = url.href;
-    } else if (url instanceof Request) {
-      urlString = url.url;
-    }
-    
-    if (isAdUrl(urlString)) {
-      debugLog('🚫 Request publicitario bloqueado (Fetch):', urlString);
-      window.notifyAdBlocked?.('request-blocked');
-      // Devolver una respuesta vacía exitosa para evitar reintentos infinitos
-      return Promise.resolve(new Response('', {
-        status: 200,
-        statusText: 'OK',
-        headers: new Headers({ 
-          'Content-Type': 'text/plain',
-          'X-AdBlock-Intercepted': 'true' 
-        })
-      }));
-    }
-    
-    const isYouTubeApi = urlString.includes('/v1/player') || urlString.includes('/v1/next') || urlString.includes('/v1/browse');
-    
-    try {
-      const response = await originalFetch.apply(this, args);
-      if (isYouTubeApi && response.ok) {
-        try {
-          const clonedResponse = response.clone();
-          let json = await clonedResponse.json();
-          json = pruneAdData(json);
-          
-          return new Response(JSON.stringify(json), {
-            status: response.status,
-            statusText: response.statusText,
-            headers: response.headers
-          });
-        } catch (e) {
-          return response;
-        }
-      }
-      return response;
-    } catch (error) {
-      // Re-lanzar error si la petición original falló
-      throw error;
-    }
-  };
-
-  // 2. Interceptar XMLHttpRequest
-  const originalXHR = window.XMLHttpRequest.prototype.open;
-  window.XMLHttpRequest.prototype.open = function(method, url) {
-    this._url = url;
-    return originalXHR.apply(this, arguments);
-  };
-
-  const originalSend = window.XMLHttpRequest.prototype.send;
-  window.XMLHttpRequest.prototype.send = function() {
-    const xhr = this;
-    const url = xhr._url || '';
-    
-    if (isAdUrl(url)) {
-      debugLog('🚫 Request publicitario bloqueado (XHR):', url);
-      window.notifyAdBlocked?.('request-blocked');
-      
-      // Simular éxito de red de forma asíncrona para evitar reintentos de YouTube
-      setTimeout(() => {
-        try {
-          // Forzar estado de completado exitoso
-          Object.defineProperty(xhr, 'status', { value: 200, configurable: true });
-          Object.defineProperty(xhr, 'statusText', { value: 'OK', configurable: true });
-          Object.defineProperty(xhr, 'readyState', { value: 4, configurable: true });
-          Object.defineProperty(xhr, 'responseText', { value: '', configurable: true });
-          Object.defineProperty(xhr, 'response', { value: '', configurable: true });
-          
-          xhr.dispatchEvent(new Event('readystatechange'));
-          xhr.dispatchEvent(new Event('load'));
-          xhr.dispatchEvent(new Event('loadend'));
-        } catch (e) {
-          debugLog('Error simulando éxito XHR:', e);
-        }
-      }, 1);
-      return; 
-    }
-
-    if (url.includes('/v1/player') || url.includes('/v1/next')) {
-      xhr.addEventListener('readystatechange', function() {
-        if (xhr.readyState === 4 && xhr.status === 200) {
-          try {
-            const json = JSON.parse(xhr.responseText);
-            const pruned = pruneAdData(json);
-            Object.defineProperty(xhr, 'responseText', { value: JSON.stringify(pruned) });
-            Object.defineProperty(xhr, 'response', { value: JSON.stringify(pruned) });
-          } catch (e) {}
-        }
-      });
-    }
-    
-    return originalSend.apply(this, arguments);
-  };
-
-  // 3. Interceptar variables iniciales
-  function interceptProp(propName) {
-    let val = pruneAdData(window[propName]);
-    Object.defineProperty(window, propName, {
-      get: () => val,
-      set: (newVal) => {
-        val = pruneAdData(newVal);
-      },
-      configurable: true
-    });
-  }
-
-  interceptProp('ytInitialPlayerResponse');
-  interceptProp('ytInitialData');
-
-  // 4. Mock de telemetría y publicidad para evitar detección y errores
+  // Ocultar huellas de automatización/extensión (mantenemos esto en el isolated world si es necesario, 
+  // aunque es mejor en el main world. Por ahora lo dejamos vacío o lo movemos).
   try {
-    window.ga = window.ga || function() {};
-    window._gaq = window._gaq || [];
-    window.google_analytics_low_priority_async = true;
-    
     // Mocks adicionales para estabilidad y anti-detección
     window.canRunAds = true;
     window.google_ad_status = 1;
-    window.ytpubads = window.ytpubads || {};
-    window.adsbygoogle = window.adsbygoogle || [];
-    window.adsbygoogle.loaded = true;
-    
-    // Ocultar huellas de automatización/extensión
-    try {
-      if (navigator.webdriver) {
-        Object.defineProperty(navigator, 'webdriver', { get: () => false });
-      }
-    } catch (e) {}
-
-    // Simular que el objeto de configuración de anuncios de YT existe
-    if (window.yt) {
-      window.yt.ads_ = window.yt.ads_ || {};
-      window.yt.adsConfig_ = window.yt.adsConfig_ || { adAllowed: false };
-    }
   } catch (e) {}
 })();
 

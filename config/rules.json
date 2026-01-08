@@ -2,10 +2,7 @@
   {
     "id": 1,
     "priority": 1,
-    "action": {
-      "type": "redirect",
-      "redirect": { "extensionPath": "/icons/icon16.png" }
-    },
+    "action": { "type": "block" },
     "condition": {
       "urlFilter": "*://googleads.g.doubleclick.net/*",
       "resourceTypes": ["image"]
@@ -14,10 +11,7 @@
   {
     "id": 2,
     "priority": 1,
-    "action": {
-      "type": "redirect",
-      "redirect": { "extensionPath": "/icons/icon16.png" }
-    },
+    "action": { "type": "block" },
     "condition": {
       "urlFilter": "*://static.doubleclick.net/*",
       "resourceTypes": ["image"]
@@ -26,10 +20,7 @@
   {
     "id": 3,
     "priority": 1,
-    "action": {
-      "type": "redirect",
-      "redirect": { "extensionPath": "/scripts/empty.js" }
-    },
+    "action": { "type": "block" },
     "condition": {
       "urlFilter": "*://*.googlesyndication.com/*",
       "resourceTypes": ["sub_frame", "xmlhttprequest", "other"]
@@ -38,10 +29,7 @@
   {
     "id": 4,
     "priority": 1,
-    "action": {
-      "type": "redirect",
-      "redirect": { "extensionPath": "/icons/icon16.png" }
-    },
+    "action": { "type": "block" },
     "condition": {
       "urlFilter": "*/pagead/lvz*",
       "resourceTypes": ["image"]
@@ -50,10 +38,7 @@
   {
     "id": 10,
     "priority": 1,
-    "action": {
-      "type": "redirect",
-      "redirect": { "extensionPath": "/icons/icon16.png" }
-    },
+    "action": { "type": "block" },
     "condition": {
       "urlFilter": "*://googleads4.g.doubleclick.net/*",
       "resourceTypes": ["image"]
@@ -62,10 +47,7 @@
   {
     "id": 11,
     "priority": 1,
-    "action": {
-      "type": "redirect",
-      "redirect": { "extensionPath": "/icons/icon16.png" }
-    },
+    "action": { "type": "block" },
     "condition": {
       "urlFilter": "*://*.googleadservices.com/*",
       "resourceTypes": ["image"]
@@ -83,10 +65,7 @@
   {
     "id": 100,
     "priority": 2,
-    "action": {
-      "type": "redirect",
-      "redirect": { "extensionPath": "/scripts/empty.js" }
-    },
+    "action": { "type": "block" },
     "condition": {
       "urlFilter": "||googleads.g.doubleclick.net^",
       "resourceTypes": ["script", "xmlhttprequest", "other"]
@@ -95,10 +74,7 @@
   {
     "id": 110,
     "priority": 2,
-    "action": {
-      "type": "redirect",
-      "redirect": { "extensionPath": "/scripts/empty.js" }
-    },
+    "action": { "type": "block" },
     "condition": {
       "urlFilter": "||static.doubleclick.net^",
       "resourceTypes": ["script", "xmlhttprequest", "other"]
@@ -107,10 +83,7 @@
   {
     "id": 111,
     "priority": 2,
-    "action": {
-      "type": "redirect",
-      "redirect": { "extensionPath": "/scripts/empty.js" }
-    },
+    "action": { "type": "block" },
     "condition": {
       "urlFilter": "||googlesyndication.com^",
       "resourceTypes": ["script", "xmlhttprequest", "other"]
@@ -119,10 +92,7 @@
   {
     "id": 112,
     "priority": 2,
-    "action": {
-      "type": "redirect",
-      "redirect": { "extensionPath": "/scripts/empty.js" }
-    },
+    "action": { "type": "block" },
     "condition": {
       "urlFilter": "||googleadservices.com^",
       "resourceTypes": ["script", "xmlhttprequest", "other"]
@@ -131,10 +101,7 @@
   {
     "id": 113,
     "priority": 2,
-    "action": {
-      "type": "redirect",
-      "redirect": { "extensionPath": "/scripts/empty.js" }
-    },
+    "action": { "type": "block" },
     "condition": {
       "urlFilter": "||adservice.google.com^",
       "resourceTypes": ["script", "xmlhttprequest", "other"]
@@ -143,10 +110,7 @@
   {
     "id": 101,
     "priority": 2,
-    "action": {
-      "type": "redirect",
-      "redirect": { "extensionPath": "/scripts/empty.js" }
-    },
+    "action": { "type": "block" },
     "condition": {
       "urlFilter": "*/pagead/*",
       "resourceTypes": ["script", "xmlhttprequest", "other"]
@@ -155,10 +119,7 @@
   {
     "id": 102,
     "priority": 2,
-    "action": {
-      "type": "redirect",
-      "redirect": { "extensionPath": "/scripts/empty.js" }
-    },
+    "action": { "type": "block" },
     "condition": {
       "urlFilter": "*/sodar/*",
       "resourceTypes": ["script", "xmlhttprequest", "other"]

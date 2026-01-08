@@ -236,6 +236,15 @@ function notifyAdBlocked(type) {
 // Exportar funciones para que blocker.js las use
 window.notifyAdBlocked = notifyAdBlocked;
 
+// Escuchar mensajes desde el MAIN world (interceptor.js)
+window.addEventListener('message', (event) => {
+  if (event.source !== window) return;
+  if (event.data && event.data.type === 'YT_ADBLOCK_EVENT') {
+    contentLog('📩 Mensaje recibido del interceptor:', event.data.detail);
+    notifyAdBlocked(event.data.detail);
+  }
+});
+
 // Inicializar cuando el DOM esté listo
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', initialize);
