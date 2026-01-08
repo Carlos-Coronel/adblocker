@@ -100,21 +100,36 @@
     return false;
   }
 
-  function pruneAdData(obj) {
-    if (!obj || typeof obj !== 'object') return obj;
+  function pruneAdData(obj, depth = 0) {
+    if (!obj || typeof obj !== 'object' || depth > 20) return obj;
+    
     const keysToPrune = [
       'adPlacements', 'playerAds', 'adSlots', 'adStepRenderer',
       'adBreakService', 'adBreakRenderer', 'masthead',
       'visitAdvertiserLink', 'interstitial'
     ];
-    if (Array.isArray(obj)) return obj.map(item => pruneAdData(item));
+
+    if (Array.isArray(obj)) {
+      // Optimización para arrays grandes: si el primer elemento no parece objeto, saltar
+      if (obj.length > 50 && obj[0] && typeof obj[0] !== 'object') return obj;
+      
+      for (let i = 0; i < obj.length; i++) {
+        obj[i] = pruneAdData(obj[i], depth + 1);
+      }
+      return obj;
+    }
+
     for (const key in obj) {
       if (keysToPrune.includes(key)) {
         if (Array.isArray(obj[key])) obj[key] = [];
         else if (typeof obj[key] === 'object' && obj[key] !== null) obj[key] = {};
         else delete obj[key];
       } else {
-        obj[key] = pruneAdData(obj[key]);
+        const val = obj[key];
+        // Solo descender si es un objeto o array
+        if (val && typeof val === 'object') {
+          obj[key] = pruneAdData(val, depth + 1);
+        }
       }
     }
     return obj;

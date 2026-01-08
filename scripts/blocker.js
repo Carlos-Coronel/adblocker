@@ -150,46 +150,38 @@ function skipVideoAd() {
  */
 function isAdPlaying() {
   const player = document.querySelector('#movie_player');
+  if (!player) return false;
+
+  // 1. Verificación rápida mediante clases del reproductor (muy eficiente)
+  if (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting')) {
+    return true;
+  }
+
+  // 2. Verificación de indicadores de anuncio visibles
   const adIndicators = [
     '.ytp-ad-player-overlay',
     '.ytp-ad-text',
-    '.ad-showing',
-    '.ad-interrupting',
     '.ytp-ad-preview-text',
     '.ytp-ad-skip-button-slot',
     '.ytp-ad-module'
   ];
   
   const hasIndicator = adIndicators.some(selector => {
-    // Buscar elemento directamente
-    const el = document.querySelector(selector);
-    if (el) {
-      // Verificar si el elemento es visible y tiene dimensiones
-      const style = window.getComputedStyle(el);
-      if (style.display !== 'none' && style.visibility !== 'hidden' && el.offsetHeight > 0) {
-        return true;
-      }
-    }
-    
-    // Buscar como clase en el contenedor del reproductor
-    if (selector.startsWith('.') && player && player.classList.contains(selector.substring(1))) {
-      return true;
-    }
-    
-    return false;
+    const el = player.querySelector(selector);
+    // Usar offsetParent para verificar visibilidad sin disparar reflow pesado
+    return el && el.offsetParent !== null;
   });
 
   if (hasIndicator) return true;
 
-  // Verificación adicional mediante API interna del reproductor si está disponible
+  // 3. Verificación mediante API interna del reproductor (si está disponible)
   try {
-    if (player && typeof player.getVideoData === 'function') {
+    if (typeof player.getVideoData === 'function') {
       const data = player.getVideoData();
       if (data && (data.isAd || data.isLiveAd)) return true;
     }
     
-    // Verificar si el estado del reproductor indica anuncio
-    if (player && typeof player.getAdState === 'function') {
+    if (typeof player.getAdState === 'function') {
       if (player.getAdState() !== -1) return true;
     }
   } catch (e) {}
@@ -204,6 +196,8 @@ function hideAdElements() {
   let hiddenCount = 0;
   
   const selectors = [...AD_SELECTORS, ...dynamicSelectors];
+  const shadowHosts = ['ytd-app', '#movie_player', 'ytd-player', '.html5-video-player'];
+  const hosts = shadowHosts.map(s => document.querySelector(s)).filter(h => h && h.shadowRoot);
   
   selectors.forEach(selector => {
     try {
@@ -211,12 +205,10 @@ function hideAdElements() {
       let elements = Array.from(document.querySelectorAll(selector));
       
       // Buscar en Shadow DOM de contenedores críticos (YouTube los usa mucho)
-      const shadowHosts = ['ytd-app', '#movie_player', 'ytd-player', '.html5-video-player'];
-      shadowHosts.forEach(hostSelector => {
+      hosts.forEach(host => {
         try {
-          const host = document.querySelector(hostSelector);
-          if (host && host.shadowRoot) {
-            const shadowElements = host.shadowRoot.querySelectorAll(selector);
+          const shadowElements = host.shadowRoot.querySelectorAll(selector);
+          if (shadowElements.length > 0) {
             elements = elements.concat(Array.from(shadowElements));
           }
         } catch (e) {}
@@ -226,10 +218,6 @@ function hideAdElements() {
         if (element && element.style.display !== 'none') {
           element.style.setProperty('display', 'none', 'important');
           element.style.setProperty('visibility', 'hidden', 'important');
-          element.style.setProperty('height', '0', 'important');
-          element.style.setProperty('width', '0', 'important');
-          element.style.setProperty('position', 'absolute', 'important');
-          element.style.setProperty('opacity', '0', 'important');
           
           // Marcar como procesado para evitar logs repetitivos
           if (!element.hasAttribute('data-ad-hidden')) {
@@ -239,7 +227,7 @@ function hideAdElements() {
         }
       });
     } catch (error) {
-      debugLog(`Error con selector ${selector}:`, error);
+      // Silenciar errores de selectores inválidos
     }
   });
   
@@ -248,8 +236,12 @@ function hideAdElements() {
     window.notifyAdBlocked?.('elements-hidden');
   }
 
-  // Ejecutar descubrimiento de nuevos anuncios (aprendizaje dinámico)
-  discoverNewAds();
+  // Ejecutar descubrimiento de nuevos anuncios (aprendizaje dinámico) con requestIdleCallback si es posible
+  if (window.requestIdleCallback) {
+    window.requestIdleCallback(() => discoverNewAds(), { timeout: 500 });
+  } else {
+    setTimeout(discoverNewAds, 100);
+  }
 }
 
 /**
@@ -263,8 +255,8 @@ function discoverNewAds() {
   potentialAds.forEach(el => {
     if (el.style.display === 'none' || el.hasAttribute('data-ad-hidden')) return;
     
-    // Heurística de texto: buscar marcas de anuncios
-    const textContent = el.innerText || "";
+    // Heurística de texto: buscar marcas de anuncios (usar textContent es más rápido que innerText)
+    const textContent = el.textContent || "";
     const hasAdTerm = adTerms.some(term => textContent.includes(term));
     
     if (hasAdTerm) {
@@ -355,7 +347,7 @@ function cleanupEmptySpaces() {
     const hasVisibleContent = container.querySelector('img, video, [class*="thumbnail"], #video-title');
     if (!hasVisibleContent) {
       // Verificar si hay texto que no sea solo "Patrocinado" o similar
-      const text = container.innerText?.trim() || "";
+      const text = container.textContent?.trim() || "";
       if (text === "" || text.includes("Patrocinado") || text.includes("Sponsored") || text.length < 5) {
         container.style.setProperty('display', 'none', 'important');
       }
@@ -366,37 +358,33 @@ function cleanupEmptySpaces() {
 /**
  * Intercepta y modifica objetos JSON para eliminar datos de anuncios (JSON Pruning)
  */
-function pruneAdData(obj) {
-  if (!obj || typeof obj !== 'object') return obj;
+function pruneAdData(obj, depth = 0) {
+  if (!obj || typeof obj !== 'object' || depth > 20) return obj;
 
   const keysToPrune = [
-    'adPlacements',
-    'playerAds',
-    'adSlots',
-    'adStepRenderer',
-    'adBreakService',
-    'adBreakRenderer',
-    'masthead',
-    'visitAdvertiserLink',
-    'interstitial'
+    'adPlacements', 'playerAds', 'adSlots', 'adStepRenderer',
+    'adBreakService', 'adBreakRenderer', 'masthead',
+    'visitAdvertiserLink', 'interstitial'
   ];
 
   if (Array.isArray(obj)) {
-    return obj.map(item => pruneAdData(item));
+    if (obj.length > 50 && obj[0] && typeof obj[0] !== 'object') return obj;
+    for (let i = 0; i < obj.length; i++) {
+      obj[i] = pruneAdData(obj[i], depth + 1);
+    }
+    return obj;
   }
 
   for (const key in obj) {
     if (keysToPrune.includes(key)) {
-      // console.log(`✂️ Podando propiedad de anuncio: ${key}`);
-      if (Array.isArray(obj[key])) {
-        obj[key] = [];
-      } else if (typeof obj[key] === 'object' && obj[key] !== null) {
-        obj[key] = {};
-      } else {
-        delete obj[key];
-      }
+      if (Array.isArray(obj[key])) obj[key] = [];
+      else if (typeof obj[key] === 'object' && obj[key] !== null) obj[key] = {};
+      else delete obj[key];
     } else {
-      obj[key] = pruneAdData(obj[key]);
+      const val = obj[key];
+      if (val && typeof val === 'object') {
+        obj[key] = pruneAdData(val, depth + 1);
+      }
     }
   }
   return obj;

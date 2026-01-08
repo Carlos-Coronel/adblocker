@@ -94,10 +94,12 @@ function startDOMObserver() {
 }
 
 /**
- * Programa una verificación de anuncios de forma amortiguada
+ * Programa una verificación de anuncios de forma amortiguada (Debounce)
  */
-function scheduleCheck(delay = 80) {
-  if (debouncedCheck) return;
+function scheduleCheck(delay = 100) {
+  if (debouncedCheck) {
+    clearTimeout(debouncedCheck);
+  }
   debouncedCheck = setTimeout(() => {
     debouncedCheck = null;
     if (isEnabled) checkForAds();
@@ -156,25 +158,26 @@ function cleanupObservers() {
  * Escucha cambios de navegación en YouTube (SPA)
  */
 function listenToNavigation() {
-  // YouTube es una SPA, usar observador de cambios en el documento
-  let lastUrl = location.href;
-  const navObserver = new MutationObserver(() => {
+  // YouTube es una SPA, usamos sus eventos personalizados para mayor eficiencia
+  const handleNav = () => {
     const url = location.href;
-    if (url !== lastUrl) {
-      lastUrl = url;
-      contentLog('📍 Navegación detectada:', url);
+    contentLog('📍 Navegación detectada:', url);
 
-      // Reiniciar observadores y chequeos para la nueva vista
-      cleanupObservers();
-      startDOMObserver();
-      startPeriodicCheck();
-      // Hacer un chequeo inicial tras un breve retraso para dejar cargar el DOM
-      setTimeout(() => { scheduleCheck(50); }, 600);
-    }
+    // Reiniciar observadores y chequeos para la nueva vista
+    cleanupObservers();
+    startDOMObserver();
+    startPeriodicCheck();
+    // Hacer un chequeo inicial tras un breve retraso
+    setTimeout(() => { scheduleCheck(150); }, 500);
+  };
+
+  window.addEventListener('yt-navigate-finish', handleNav);
+  window.addEventListener('sp-navigate-finish', handleNav); // Variante para algunos contextos
+  
+  // Como fallback para casos raros o navegación de historial estándar
+  window.addEventListener('popstate', () => {
+    setTimeout(() => { scheduleCheck(200); }, 500);
   });
-
-  // Observar el documento completo; no pasa un Node inválido
-  navObserver.observe(document.documentElement || document, { subtree: true, childList: true });
 }
 
 /**
