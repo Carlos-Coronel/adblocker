@@ -237,11 +237,34 @@ function notifyAdBlocked(type) {
 window.notifyAdBlocked = notifyAdBlocked;
 
 // Escuchar mensajes desde el MAIN world (interceptor.js)
-window.addEventListener('message', (event) => {
+window.addEventListener('message', async (event) => {
   if (event.source !== window) return;
+  
+  // Notificación de anuncio bloqueado
   if (event.data && event.data.type === 'YT_ADBLOCK_EVENT') {
     contentLog('📩 Mensaje recibido del interceptor:', event.data.detail);
     notifyAdBlocked(event.data.detail);
+  }
+
+  // Detección de nuevo anuncio (dinámico)
+  if (event.data && event.data.type === 'YT_AD_DETECTED') {
+    const { ruleType, rule } = event.data;
+    contentLog(`🆕 Nuevo anuncio detectado (${ruleType}):`, rule);
+    chrome.runtime.sendMessage({
+      action: 'addDynamicRule',
+      ruleType: ruleType,
+      rule: rule
+    });
+  }
+
+  // Petición de reglas dinámicas desde el Main World
+  if (event.data && event.data.type === 'GET_DYNAMIC_RULES') {
+    try {
+      const rules = await chrome.runtime.sendMessage({ action: 'getDynamicRules' });
+      window.postMessage({ type: 'DYNAMIC_RULES_DATA', rules: rules }, '*');
+    } catch (e) {
+      console.error('Error al obtener reglas dinámicas:', e);
+    }
   }
 });
 

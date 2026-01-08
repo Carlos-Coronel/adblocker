@@ -69,6 +69,26 @@ const AD_SELECTORS = [
   'ytd-ad-engagement-panel-renderer'
 ];
 
+let dynamicSelectors = [];
+
+/**
+ * Carga los selectores dinámicos desde el almacenamiento
+ */
+async function loadDynamicSelectors() {
+  try {
+    const data = await chrome.storage.local.get('dynamic_ad_rules');
+    if (data.dynamic_ad_rules && data.dynamic_ad_rules.selectors) {
+      dynamicSelectors = data.dynamic_ad_rules.selectors;
+      debugLog('📦 Selectores dinámicos cargados:', dynamicSelectors.length);
+    }
+  } catch (e) {
+    // Silenciar errores en contextos restringidos
+  }
+}
+
+// Intentar cargar al inicio
+loadDynamicSelectors();
+
 /**
  * Intenta saltar un anuncio de video automáticamente (CORREGIDO)
  */
@@ -183,7 +203,9 @@ function isAdPlaying() {
 function hideAdElements() {
   let hiddenCount = 0;
   
-  AD_SELECTORS.forEach(selector => {
+  const selectors = [...AD_SELECTORS, ...dynamicSelectors];
+  
+  selectors.forEach(selector => {
     try {
       // Buscar en el documento principal
       let elements = Array.from(document.querySelectorAll(selector));
@@ -222,9 +244,61 @@ function hideAdElements() {
   });
   
   if (hiddenCount > 0) {
-    debugLog(`🙈 Ocultados ${hiddenCount} nuevos elementos publicitarios`);
+    debugLog(`🙈 Ocultados ${hiddenCount} elementos publicitarios`);
     window.notifyAdBlocked?.('elements-hidden');
   }
+
+  // Ejecutar descubrimiento de nuevos anuncios (aprendizaje dinámico)
+  discoverNewAds();
+}
+
+/**
+ * Busca elementos que parezcan anuncios basándose en heurísticas de texto (auto-aprendizaje)
+ */
+function discoverNewAds() {
+  const adTerms = ['Anuncio', 'Publicidad', 'Sponsored', 'Sponsoreado', 'Promocionado', 'Patrocinado'];
+  // Solo buscar en elementos que suelen ser contenedores de anuncios
+  const potentialAds = document.querySelectorAll('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-rich-section-renderer, ytd-ad-slot-renderer');
+  
+  potentialAds.forEach(el => {
+    if (el.style.display === 'none' || el.hasAttribute('data-ad-hidden')) return;
+    
+    // Heurística de texto: buscar marcas de anuncios
+    const textContent = el.innerText || "";
+    const hasAdTerm = adTerms.some(term => textContent.includes(term));
+    
+    if (hasAdTerm) {
+      debugLog('🎯 Nuevo anuncio potencial detectado por heurística:', el);
+      
+      // Ocultar inmediatamente
+      el.style.setProperty('display', 'none', 'important');
+      el.setAttribute('data-ad-hidden', 'true');
+      
+      // Intentar identificar un selector robusto
+      const tagName = el.tagName.toLowerCase();
+      let selector = '';
+      
+      if (el.querySelector('[class*="ad-"]') || el.querySelector('[id*="ad-"]')) {
+        selector = `${tagName}:has([class*="ad-"], [id*="ad-"])`;
+      } else if (el.querySelector('.ytd-badge-supported-renderer')) {
+         selector = `${tagName}:has(.ytd-badge-supported-renderer)`;
+      } else {
+        // Selector genérico si no hay nada más específico
+        selector = tagName;
+      }
+
+      // Notificar al background si es nuevo y no está en las listas estáticas
+      if (selector && !AD_SELECTORS.includes(selector) && !dynamicSelectors.includes(selector)) {
+        debugLog('✨ Guardando nuevo selector dinámico:', selector);
+        chrome.runtime.sendMessage({
+          action: 'addDynamicRule',
+          ruleType: 'selectors',
+          rule: selector
+        }).catch(() => {});
+        dynamicSelectors.push(selector);
+      }
+    }
+  });
 }
 
 /**
