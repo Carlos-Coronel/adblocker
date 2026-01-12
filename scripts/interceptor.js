@@ -37,12 +37,10 @@
     /doubleclick/i,
     /adservice/i,
     /pagead/i,
-    /ptracking/i,
     /ad_break/i,
     /adunit/i,
     /ads\.js/i,
     /\/v1\/player\/ad_break/i,
-    /\/api\/stats\/ads/i,
     /youtube\.com\/pagead\//i,
     /googlevideo\.com\/videoplayback\?.*&adformat=/i
   ];
@@ -83,8 +81,7 @@
     if (dynamicPatterns.some(pattern => pattern.test(urlString))) return true;
     
     // 3. Heurística para nuevos anuncios (auto-aprendizaje)
-    if (urlString.includes('youtube.com/api/stats/ads') || 
-        (urlString.includes('googlevideo.com/videoplayback') && urlString.includes('&adformat='))) {
+    if (urlString.includes('googlevideo.com/videoplayback') && urlString.includes('&adformat=')) {
       
       // Si detectamos uno que no estaba en las listas, lo notificamos para guardarlo
       if (!dynamicPatterns.some(p => p.test(urlString))) {
@@ -107,29 +104,36 @@
   }
 
   function pruneAdData(obj) {
-    if (!obj || typeof obj !== 'object') return obj;
+    if (!obj || typeof obj !== 'object') return { data: obj, modified: false };
     
     const startTime = performance.now();
-    const keysToPrune = [
+    const keysToPrune = new Set([
       'adPlacements', 'playerAds', 'adSlots', 'adStepRenderer',
       'adBreakService', 'adBreakRenderer', 'masthead',
-      'visitAdvertiserLink', 'interstitial'
-    ];
+      'visitAdvertiserLink', 'interstitial', 'adBreakParams',
+      'adsV2', 'onTapCommand', 'adPlacement', 'playerAdRenderer'
+    ]);
 
     let nodesProcessed = 0;
-    const MAX_NODES = 20000; // Límite de seguridad
+    let modified = false;
+    const MAX_NODES = 8000; 
+    const MAX_TIME = 15; // ms máximo por llamada
     const stack = [{ o: obj, d: 0 }];
 
     try {
       while (stack.length > 0 && nodesProcessed < MAX_NODES) {
+        if (nodesProcessed % 100 === 0 && (performance.now() - startTime) > MAX_TIME) {
+          debugLog('WARN', 'pruneAdData interrumpido por tiempo');
+          break;
+        }
+
         const { o, d } = stack.pop();
         nodesProcessed++;
 
-        if (!o || typeof o !== 'object' || d > 15) continue;
+        if (!o || typeof o !== 'object' || d > 12) continue; 
 
         if (Array.isArray(o)) {
-          // Optimización: Si es un array muy grande de tipos primitivos, no procesar
-          if (o.length > 100 && typeof o[0] !== 'object' && o[0] !== null) continue;
+          if (o.length > 50 && typeof o[0] !== 'object' && o[0] !== null) continue;
           
           for (let i = o.length - 1; i >= 0; i--) {
             if (o[i] && typeof o[i] === 'object') {
@@ -138,15 +142,28 @@
           }
         } else {
           for (const key in o) {
-            if (keysToPrune.includes(key)) {
-              if (Array.isArray(o[key])) o[key] = [];
-              else if (typeof o[key] === 'object' && o[key] !== null) o[key] = {};
-              else delete o[key];
-            } else {
-              const val = o[key];
-              if (val && typeof val === 'object') {
-                stack.push({ o: val, d: d + 1 });
+            if (keysToPrune.has(key)) {
+              if (Array.isArray(o[key])) {
+                if (o[key].length > 0) {
+                  o[key] = [];
+                  modified = true;
+                }
+              } else if (typeof o[key] === 'object' && o[key] !== null) {
+                if (Object.keys(o[key]).length > 0) {
+                  o[key] = {};
+                  modified = true;
+                }
+              } else {
+                delete o[key];
+                modified = true;
               }
+            } else {
+              try {
+                const val = o[key];
+                if (val && typeof val === 'object') {
+                  stack.push({ o: val, d: d + 1 });
+                }
+              } catch (e) { }
             }
           }
         }
@@ -157,13 +174,13 @@
 
     const duration = performance.now() - startTime;
     if (duration > PERF_THRESHOLD) {
-      debugLog('PERF', `pruneAdData tomó ${duration.toFixed(2)}ms (${nodesProcessed} nodos)`);
+      debugLog('PERF', `pruneAdData tomó ${duration.toFixed(2)}ms (${nodesProcessed} nodos, modificado: ${modified})`);
     }
-    return obj;
+    return { data: obj, modified };
   }
 
   function notifyAdBlocked(type) {
-    window.postMessage({ type: 'YT_ADBLOCK_EVENT', detail: type }, '*');
+    window.postMessage({ type: 'ADBLOCK_AD_BLOCKED', adType: type }, '*');
   }
 
   // Interceptar Fetch
@@ -184,17 +201,20 @@
       }));
     }
     
-    const isYouTubeApi = urlString.includes('/v1/player') || urlString.includes('/v1/next') || urlString.includes('/v1/browse');
+    const isYouTubeApi = urlString.includes('/v1/player') || urlString.includes('/v1/next');
     try {
       const response = await originalFetch.apply(this, args);
       if (isYouTubeApi && response.ok) {
         try {
           const clonedResponse = response.clone();
           let json = await clonedResponse.json();
-          json = pruneAdData(json);
-          return new Response(JSON.stringify(json), {
-            status: response.status, statusText: response.statusText, headers: response.headers
-          });
+          const result = pruneAdData(json);
+          if (result.modified) {
+            return new Response(JSON.stringify(result.data), {
+              status: response.status, statusText: response.statusText, headers: response.headers
+            });
+          }
+          return response;
         } catch (e) { 
           debugLog('ERROR', 'Error al procesar JSON en Fetch:', e);
           return response; 
@@ -202,7 +222,11 @@
       }
       return response;
     } catch (error) { 
-      debugLog('ERROR', 'Error en Fetch interceptado:', error);
+      if (error.name === 'AbortError') {
+        debugLog('INFO', 'Fetch interceptado abortado');
+      } else {
+        debugLog('ERROR', 'Error en Fetch interceptado:', error);
+      }
       throw error; 
     }
   };
@@ -240,9 +264,20 @@
         if (xhr.readyState === 4 && xhr.status === 200) {
           try {
             const json = JSON.parse(xhr.responseText);
-            const pruned = pruneAdData(json);
-            Object.defineProperty(xhr, 'responseText', { value: JSON.stringify(pruned), configurable: true });
-            Object.defineProperty(xhr, 'response', { value: JSON.stringify(pruned), configurable: true });
+            const result = pruneAdData(json);
+            if (result.modified) {
+              const responseText = JSON.stringify(result.data);
+              try {
+                Object.defineProperty(xhr, 'responseText', { value: responseText, configurable: true });
+              } catch (e) {
+                xhr.responseText = responseText;
+              }
+              try {
+                Object.defineProperty(xhr, 'response', { value: responseText, configurable: true });
+              } catch (e) {
+                xhr.response = responseText;
+              }
+            }
           } catch (e) {
             debugLog('ERROR', 'Error al procesar JSON en XHR:', e);
           }
@@ -254,13 +289,25 @@
 
   // Interceptar variables iniciales
   function interceptProp(propName) {
-    if (window[propName]) {
-      let val = pruneAdData(window[propName]);
+    let val = window[propName];
+    if (val) {
+      const result = pruneAdData(val);
+      val = result.data;
+    }
+
+    try {
       Object.defineProperty(window, propName, {
         get: () => val,
-        set: (newVal) => { val = pruneAdData(newVal); },
-        configurable: true
+        set: (newVal) => {
+          debugLog('INFO', `📦 Variable global interceptada y podada: ${propName}`);
+          const result = pruneAdData(newVal);
+          val = result.data;
+        },
+        configurable: true,
+        enumerable: true
       });
+    } catch (e) {
+      debugLog('WARN', `No se pudo interceptar ${propName}:`, e);
     }
   }
   interceptProp('ytInitialPlayerResponse');

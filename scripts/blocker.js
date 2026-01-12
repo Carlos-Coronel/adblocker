@@ -25,11 +25,13 @@ function debugLog(level, ...args) {
 (function setupWatchdog() {
   if (!DEBUG_MODE) return;
   let lastTime = performance.now();
+  let lastWarnTime = 0;
   function check() {
     const now = performance.now();
     const diff = now - lastTime;
-    if (diff > 100) { // Si el salto entre frames es > 100ms
+    if (diff > 200 && (now - lastWarnTime > 1000)) { // Umbral de 200ms y throttle de 1s para logs
       debugLog('WARN', `⚠️ Posible bloqueo detectado: ${diff.toFixed(2)}ms sin responder`);
+      lastWarnTime = now;
     }
     lastTime = now;
     requestAnimationFrame(check);
@@ -113,6 +115,12 @@ async function loadDynamicSelectors() {
 // Intentar cargar al inicio
 loadDynamicSelectors();
 
+let userPreferences = {
+  playbackRate: 1,
+  muted: false
+};
+let wasAdActive = false;
+
 /**
  * Intenta saltar un anuncio de video automáticamente (CORREGIDO)
  */
@@ -133,13 +141,21 @@ function skipVideoAd() {
     
     // 2. Si hay un anuncio activo, acelerarlo y adelantarlo
     if (video && adActive) {
+      if (!wasAdActive) {
+        // Guardar preferencias solo al inicio del anuncio
+        // Si la velocidad ya es 16 (por un error previo), asumimos 1
+        userPreferences.playbackRate = video.playbackRate >= 10 ? 1 : video.playbackRate;
+        userPreferences.muted = video.muted;
+        wasAdActive = true;
+        debugLog('INFO', '🕒 Anuncio detectado, guardando preferencias:', userPreferences);
+      }
+
       // Mute y aceleración (técnica muy efectiva y menos propensa a bloqueos)
       if (!video.muted) video.muted = true;
       if (video.playbackRate < 10) video.playbackRate = 16;
       
       if (typeof video.duration === 'number' && !isNaN(video.duration) && video.duration > 0 && video.duration !== Infinity) {
         // BUCLE FIX: Solo adelantamos si no estamos ya cerca del final
-        // Esto evita que se asigne el mismo valor repetidamente
         if (video.currentTime < video.duration - 0.5) {
           video.currentTime = video.duration;
           debugLog('INFO', '⏩ Adelantando anuncio al final');
@@ -155,11 +171,17 @@ function skipVideoAd() {
           return true;
         }
       }
+    } else if (video && wasAdActive && !adActive) {
+      // Restaurar velocidad y mute si el anuncio terminó
+      video.playbackRate = userPreferences.playbackRate;
+      video.muted = userPreferences.muted;
+      wasAdActive = false;
+      debugLog('INFO', '▶️ Anuncio finalizado. Restaurando:', userPreferences);
     } else if (video && video.playbackRate === 16 && !adActive) {
-      // Restaurar velocidad si el anuncio terminó y quedó en 16x
+      // Backup en caso de que wasAdActive fallara
       video.playbackRate = 1;
       video.muted = false;
-      debugLog('INFO', '▶️ Restaurando velocidad normal');
+      debugLog('INFO', '▶️ Restaurando velocidad normal (backup)');
     }
     
     return false;
@@ -169,10 +191,25 @@ function skipVideoAd() {
   }
 }
 
+let lastIsAdPlayingResult = false;
+let lastIsAdPlayingTime = 0;
+
 /**
- * Verifica si hay un anuncio reproduciéndose
+ * Verifica si hay un anuncio reproduciéndose (Con cache de 100ms)
  */
 function isAdPlaying() {
+  const now = performance.now();
+  if (now - lastIsAdPlayingTime < 100) {
+    return lastIsAdPlayingResult;
+  }
+  
+  const result = _isAdPlayingInternal();
+  lastIsAdPlayingResult = result;
+  lastIsAdPlayingTime = now;
+  return result;
+}
+
+function _isAdPlayingInternal() {
   const player = document.querySelector('#movie_player');
   if (!player) return false;
 
@@ -213,27 +250,41 @@ function isAdPlaying() {
   return false;
 }
 
+let combinedSelectorCache = null;
+let lastSelectorCount = 0;
+let cachedShadowHosts = null;
+
+let hideIterationCount = 0;
+
 /**
  * Oculta elementos publicitarios del DOM
  */
 function hideAdElements() {
   const startTime = performance.now();
   let hiddenCount = 0;
+  hideIterationCount++;
   
   const allSelectors = [...AD_SELECTORS, ...dynamicSelectors];
-  const combinedSelector = allSelectors.join(',');
   
-  const shadowHosts = ['ytd-app', '#movie_player', 'ytd-player', '.html5-video-player'];
-  const hosts = shadowHosts.map(s => document.querySelector(s)).filter(h => h && h.shadowRoot);
+  if (!combinedSelectorCache || allSelectors.length !== lastSelectorCount) {
+    combinedSelectorCache = allSelectors.join(',');
+    lastSelectorCount = allSelectors.length;
+  }
+  
+  // Cachear shadow hosts para evitar document.querySelector repetitivo
+  if (!cachedShadowHosts || hideIterationCount % 10 === 0) {
+    const shadowHostSelectors = ['ytd-app', '#movie_player', 'ytd-player', '.html5-video-player'];
+    cachedShadowHosts = shadowHostSelectors.map(s => document.querySelector(s)).filter(h => h && h.shadowRoot);
+  }
   
   try {
-    // 1. Buscar en el documento principal (usando el selector combinado es mucho más rápido)
-    let elements = Array.from(document.querySelectorAll(combinedSelector));
+    // 1. Buscar en el documento principal
+    let elements = Array.from(document.querySelectorAll(combinedSelectorCache));
     
-    // 2. Buscar en Shadow DOM de contenedores críticos
-    hosts.forEach(host => {
+    // 2. Buscar en Shadow DOM de contenedores críticos (solo si están cacheados)
+    cachedShadowHosts.forEach(host => {
       try {
-        const shadowElements = host.shadowRoot.querySelectorAll(combinedSelector);
+        const shadowElements = host.shadowRoot.querySelectorAll(combinedSelectorCache);
         if (shadowElements.length > 0) {
           elements = elements.concat(Array.from(shadowElements));
         }
@@ -252,7 +303,7 @@ function hideAdElements() {
       }
     });
   } catch (error) {
-    // Si falla el selector combinado, volvemos al método uno por uno como fallback
+    // Fallback si falla el selector combinado
     allSelectors.forEach(selector => {
       try {
         document.querySelectorAll(selector).forEach(el => {

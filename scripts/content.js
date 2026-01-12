@@ -76,16 +76,23 @@ function startDOMObserver() {
 
   observer = new MutationObserver((mutations) => {
     let hasAdditions = false;
+    // Ignorar ráfagas masivas de mutaciones que suelen ser renders de YouTube
+    if (mutations.length > 300) return;
+
     for (const mutation of mutations) {
       if (mutation.addedNodes && mutation.addedNodes.length > 0) {
+        // Ignorar si el nodo añadido es uno de nuestros botones o estilos
+        const node = mutation.addedNodes[0];
+        if (node.id === 'yt-adblock-bypass-button' || node.tagName === 'STYLE') continue;
+        
         hasAdditions = true;
         break;
       }
     }
 
     if (hasAdditions) {
-      // Ajustar delay según volumen de mutaciones
-      const delay = mutations.length > 100 ? 500 : 100;
+      // Ajustar delay según volumen de mutaciones para no saturar
+      const delay = mutations.length > 50 ? 1000 : 300;
       scheduleCheck(delay);
     }
   });
@@ -214,13 +221,23 @@ function checkForAds() {
     // 2. Otras tareas de limpieza (Prioridad MEDIA - cada 1s aprox)
     if (!window._lastDeepClean || (now - window._lastDeepClean > 1000)) {
         window._lastDeepClean = now;
-        try {
-            if (typeof hideAdElements === 'function') hideAdElements();
-            if (typeof removeAdOverlays === 'function') removeAdOverlays();
-            if (typeof cleanupEmptySpaces === 'function') cleanupEmptySpaces();
-            injectBypassButton();
-        } catch (e) {
-            contentLog('ERROR', 'Error en tareas de limpieza profunda:', e);
+        
+        // Ejecutar tareas pesadas en tiempo de inactividad
+        const idleWork = () => {
+          try {
+              if (typeof hideAdElements === 'function') hideAdElements();
+              if (typeof removeAdOverlays === 'function') removeAdOverlays();
+              if (typeof cleanupEmptySpaces === 'function') cleanupEmptySpaces();
+              injectBypassButton();
+          } catch (e) {
+              contentLog('ERROR', 'Error en tareas de limpieza profunda:', e);
+          }
+        };
+
+        if (window.requestIdleCallback) {
+          window.requestIdleCallback(idleWork, { timeout: 1000 });
+        } else {
+          setTimeout(idleWork, 1);
         }
     }
 
@@ -275,9 +292,9 @@ window.addEventListener('message', async (event) => {
   if (event.source !== window) return;
   
   // Notificación de anuncio bloqueado
-  if (event.data && event.data.type === 'YT_ADBLOCK_EVENT') {
-    contentLog('📩 Mensaje recibido del interceptor:', event.data.detail);
-    notifyAdBlocked(event.data.detail);
+  if (event.data && event.data.type === 'ADBLOCK_AD_BLOCKED') {
+    contentLog('📩 Mensaje recibido del interceptor:', event.data.adType);
+    notifyAdBlocked(event.data.adType);
   }
 
   // Detección de nuevo anuncio (dinámico)

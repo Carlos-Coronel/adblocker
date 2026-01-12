@@ -21,6 +21,13 @@ const INITIAL_DYNAMIC_RULES = {
 chrome.runtime.onInstalled.addListener(async () => {
   console.log('🚫 Bloqueador de YouTube instalado o actualizado');
   
+  // Asegurarse de que navigationPreload esté desactivado si no se usa
+  try {
+    if (self.registration && self.registration.navigationPreload) {
+      await self.registration.navigationPreload.disable();
+    }
+  } catch (e) {}
+
   const data = await chrome.storage.local.get([
     CONFIG.ENABLED_KEY,
     CONFIG.STATS_KEY,
