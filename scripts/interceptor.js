@@ -17,6 +17,33 @@
     }
   }
 
+  function isChannelPage() {
+    const path = window.location.pathname;
+    const segments = path.split('/').filter(Boolean);
+    
+    // Patrones estándar
+    if (path.startsWith('/@') || 
+        path.startsWith('/channel/') || 
+        path.startsWith('/user/') || 
+        path.startsWith('/c/')) {
+      return true;
+    }
+
+    // URLs personalizadas antiguas o sin prefijo: youtube.com/nombredelcanal
+    if (segments.length > 0) {
+      const reserved = [
+        'watch', 'results', 'shorts', 'feed', 'playlist', 'premium', 
+        'settings', 'live', 'gaming', 'sports', 'news', 'fashion', 
+        'learning', 'revisions', 'logout', 'signin', 'ads', 'explore', 'trending'
+      ];
+      if (!reserved.includes(segments[0])) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   const AD_REGEX = /googleads|doubleclick|adservice|pagead|ad_break|adunit|ads\.js|\/v1\/player\/ad_break|youtube\.com\/pagead\/|googlevideo\.com\/videoplayback\?.*&adformat=/i;
 
   let dynamicDomains = [];
@@ -39,6 +66,7 @@
 
   function isAdUrl(url) {
     if (!url) return false;
+    if (isChannelPage()) return false;
     const urlString = String(url);
     
     if (AD_REGEX.test(urlString)) return true;
@@ -57,6 +85,7 @@
 
   function pruneAdData(obj) {
     if (!obj || typeof obj !== 'object') return { data: obj, modified: false };
+    if (isChannelPage()) return { data: obj, modified: false };
     
     const startTime = performance.now();
     const keysToPrune = ['adPlacements', 'playerAds', 'adSlots', 'adStepRenderer', 'adBreakService', 'adBreakRenderer', 'masthead', 'visitAdvertiserLink', 'interstitial', 'adBreakParams', 'adsV2', 'onTapCommand', 'adPlacement', 'playerAdRenderer'];

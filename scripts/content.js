@@ -26,6 +26,7 @@ function waitForBody(timeout = 5000) {
   });
 }
 
+
 /**
  * Inicializa el content script
  */
@@ -35,8 +36,22 @@ async function initialize() {
     const data = await chrome.storage.local.get('adblock_enabled');
     isEnabled = data.adblock_enabled !== false;
 
+    // Gestionar clase de habilitación global para CSS
+    document.documentElement.classList.toggle('yt-adblock-enabled', isEnabled);
+
     if (!isEnabled) {
       console.log('⏸️ Bloqueador deshabilitado');
+      return;
+    }
+
+    // Escuchar cambios en la navegación SPA de YouTube (Siempre activo)
+    listenToNavigation();
+
+    // Actualizar clases de canal (definida en blocker.js)
+    if (window.updateRootClasses) window.updateRootClasses();
+
+    if (window.isChannelPage && window.isChannelPage()) {
+      console.log('⏭️ Página de canal detectada, bloqueador en pausa');
       return;
     }
 
@@ -48,9 +63,6 @@ async function initialize() {
 
     // Iniciar verificación periódica
     startPeriodicCheck();
-
-    // Escuchar cambios en la navegación SPA de YouTube
-    listenToNavigation();
   } catch (e) {
     console.error('Error al inicializar content script:', e);
   }
@@ -125,7 +137,7 @@ function startPeriodicCheck() {
   let timerId = null;
 
   function loop() {
-    if (!isEnabled) return;
+    if (!isEnabled || (window.isChannelPage && window.isChannelPage())) return;
 
     // Ajustar frecuencia según el contexto
     let delay = baseDelay;
@@ -178,7 +190,16 @@ function listenToNavigation() {
     const url = location.href;
     log('INFO', '📍 Navegación detectada:', url);
 
+    // Actualizar clases de canal
+    if (window.updateRootClasses) window.updateRootClasses();
+
     cleanupObservers();
+
+    if (window.isChannelPage && window.isChannelPage()) {
+      log('INFO', '⏭️ Navegado a un canal, bloqueador pausado');
+      return;
+    }
+
     startDOMObserver();
     startPeriodicCheck();
     setTimeout(() => { scheduleCheck(300); }, 1000);
@@ -190,6 +211,9 @@ function listenToNavigation() {
   
   window.addEventListener('popstate', () => {
     window._isNavigating = false;
+    if (window.updateRootClasses) window.updateRootClasses();
+    cleanupObservers();
+    if (window.isChannelPage && window.isChannelPage()) return;
     setTimeout(() => { scheduleCheck(500); }, 500);
   });
 }
@@ -198,6 +222,7 @@ function listenToNavigation() {
  * Verifica y bloquea anuncios en la página
  */
 function checkForAds() {
+  if (window.isChannelPage && window.isChannelPage()) return;
   const now = Date.now();
   const startTime = performance.now();
   
@@ -257,7 +282,7 @@ function injectBypassButton() {
     
     // Insertar el botón
     target.parentElement.insertBefore(bypassBtn, target.nextSibling);
-    contentLog('INFO', '🚀 Botón de Bypass Alternativo inyectado');
+    log('INFO', '🚀 Botón de Bypass Alternativo inyectado');
 }
 
 /**

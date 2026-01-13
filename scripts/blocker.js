@@ -362,19 +362,55 @@ function cleanupEmptySpaces() {
 }
 
 /**
+ * Verifica si la página actual es un canal de YouTube
+ */
+function isChannelPage() {
+  const path = window.location.pathname;
+  const segments = path.split('/').filter(Boolean);
+  
+  // Patrones estándar
+  if (path.startsWith('/@') || 
+      path.startsWith('/channel/') || 
+      path.startsWith('/user/') || 
+      path.startsWith('/c/')) {
+    return true;
+  }
+
+  // URLs personalizadas antiguas o sin prefijo: youtube.com/nombredelcanal
+  if (segments.length > 0) {
+    const reserved = [
+      'watch', 'results', 'shorts', 'feed', 'playlist', 'premium', 
+      'settings', 'live', 'gaming', 'sports', 'news', 'fashion', 
+      'learning', 'revisions', 'logout', 'signin', 'ads', 'explore', 'trending'
+    ];
+    if (!reserved.includes(segments[0])) {
+      return true;
+    }
+  }
+
+  return false;
+}
+window.isChannelPage = isChannelPage; // Hacerlo disponible para content.js
+
+/**
  * Estilo CSS adicional para ocultar anuncios
  */
-(function injectStyles() {
+function injectStyles() {
+  if (document.getElementById('yt-adblock-styles')) return;
+
   const style = document.createElement('style');
+  style.id = 'yt-adblock-styles';
   style.textContent = `
-    /* Ocultar contenedores de anuncios */
-    ytd-display-ad-renderer,
-    ytd-promoted-sparkles-web-renderer,
-    ytd-ad-slot-renderer,
-    .ytd-merch-shelf-renderer,
-    .video-ads,
-    .ytp-ad-module,
-    #player-ads {
+    /* Solo aplicar si la clase global está presente y NO estamos en un canal */
+    html.yt-adblock-enabled:not(.yt-channel-page) ytd-display-ad-renderer,
+    html.yt-adblock-enabled:not(.yt-channel-page) ytd-promoted-sparkles-web-renderer,
+    html.yt-adblock-enabled:not(.yt-channel-page) ytd-ad-slot-renderer,
+    html.yt-adblock-enabled:not(.yt-channel-page) .ytd-merch-shelf-renderer,
+    html.yt-adblock-enabled:not(.yt-channel-page) .video-ads,
+    html.yt-adblock-enabled:not(.yt-channel-page) .ytp-ad-module,
+    html.yt-adblock-enabled:not(.yt-channel-page) #player-ads,
+    html.yt-adblock-enabled:not(.yt-channel-page) .ytd-in-feed-ad-layout-renderer,
+    html.yt-adblock-enabled:not(.yt-channel-page) .ytd-video-masthead-ad-v3-renderer {
       display: none !important;
       visibility: hidden !important;
       height: 0 !important;
@@ -382,36 +418,36 @@ function cleanupEmptySpaces() {
     }
     
     /* Ocultar overlays */
-    .ytp-ad-overlay-container,
-    .ytp-ad-text-overlay,
-    .ytp-ad-player-overlay-flyout-cta,
-    .ytp-ad-player-overlay-instream-info,
-    .ytp-ad-image-overlay {
+    html.yt-adblock-enabled:not(.yt-channel-page) .ytp-ad-overlay-container,
+    html.yt-adblock-enabled:not(.yt-channel-page) .ytp-ad-text-overlay,
+    html.yt-adblock-enabled:not(.yt-channel-page) .ytp-ad-player-overlay-flyout-cta,
+    html.yt-adblock-enabled:not(.yt-channel-page) .ytp-ad-player-overlay-instream-info,
+    html.yt-adblock-enabled:not(.yt-channel-page) .ytp-ad-image-overlay {
       opacity: 0 !important;
       pointer-events: none !important;
       display: none !important;
     }
     
     /* Limpiar avisos anti-adblock */
-    ytd-enforcement-message-view-model,
-    yt-playability-error-supported-renderers {
+    html.yt-adblock-enabled:not(.yt-channel-page) ytd-enforcement-message-view-model,
+    html.yt-adblock-enabled:not(.yt-channel-page) yt-playability-error-supported-renderers {
       display: none !important;
     }
     
     /* Limpiar espacios vacíos (Rich Grid y otros) */
-    ytd-rich-item-renderer:has(ytd-display-ad-renderer),
-    ytd-rich-item-renderer:has(ytd-ad-slot-renderer),
-    ytd-rich-item-renderer:has(ytd-promoted-sparkles-web-renderer),
-    ytd-rich-item-renderer:has([class*="AdComponent"]),
-    ytd-rich-section-renderer:has(ytd-statement-banner-renderer),
-    ytd-rich-section-renderer:has(ytd-in-feed-ad-layout-renderer),
-    ytd-rich-section-renderer:has(ytd-ad-slot-renderer),
-    ytd-grid-video-renderer:has(ytd-ad-slot-renderer) {
+    html.yt-adblock-enabled:not(.yt-channel-page) ytd-rich-item-renderer:has(ytd-display-ad-renderer),
+    html.yt-adblock-enabled:not(.yt-channel-page) ytd-rich-item-renderer:has(ytd-ad-slot-renderer),
+    html.yt-adblock-enabled:not(.yt-channel-page) ytd-rich-item-renderer:has(ytd-promoted-sparkles-web-renderer),
+    html.yt-adblock-enabled:not(.yt-channel-page) ytd-rich-item-renderer:has([class*="AdComponent"]),
+    html.yt-adblock-enabled:not(.yt-channel-page) ytd-rich-section-renderer:has(ytd-statement-banner-renderer),
+    html.yt-adblock-enabled:not(.yt-channel-page) ytd-rich-section-renderer:has(ytd-in-feed-ad-layout-renderer),
+    html.yt-adblock-enabled:not(.yt-channel-page) ytd-rich-section-renderer:has(ytd-ad-slot-renderer),
+    html.yt-adblock-enabled:not(.yt-channel-page) ytd-grid-video-renderer:has(ytd-ad-slot-renderer) {
       display: none !important;
     }
 
     /* Botón de Bypass Alternativo (yout-ube.com) */
-    .yt-adblock-bypass-btn {
+    html.yt-adblock-enabled:not(.yt-channel-page) .yt-adblock-bypass-btn {
       background-color: #ff0000 !important;
       color: white !important;
       border: none !important;
@@ -428,17 +464,34 @@ function cleanupEmptySpaces() {
       font-family: inherit !important;
       text-decoration: none !important;
     }
-    .yt-adblock-bypass-btn:hover {
+    html.yt-adblock-enabled:not(.yt-channel-page) .yt-adblock-bypass-btn:hover {
       background-color: #cc0000 !important;
     }
-    .yt-adblock-bypass-btn span {
+    html.yt-adblock-enabled:not(.yt-channel-page) .yt-adblock-bypass-btn span {
       font-size: 16px !important;
     }
   `;
   
   (document.head || document.documentElement).appendChild(style);
   debugLog('INFO', '💉 Estilos de bloqueo inyectados');
-})();
+}
+
+/**
+ * Gestiona las clases en el elemento raíz para activar/desactivar estilos
+ */
+function updateRootClasses() {
+  const isChannel = isChannelPage();
+  const html = document.documentElement;
+  
+  // Clase para indicar si estamos en un canal
+  html.classList.toggle('yt-channel-page', isChannel);
+  
+  // La clase 'yt-adblock-enabled' se gestionará desde content.js basado en chrome.storage
+}
+
+// Inicializar clases y estilos
+updateRootClasses();
+injectStyles();
 
 /**
  * Convierte una URL de YouTube a su versión con guion (yout-ube.com)
