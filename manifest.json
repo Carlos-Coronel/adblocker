@@ -67,7 +67,7 @@
   
   "web_accessible_resources": [
     {
-      "resources": ["config/*.json", "scripts/empty.js", "scripts/empty.json"],
+      "resources": ["config/*.json"],
       "matches": ["*://*.youtube.com/*"]
     }
   ]

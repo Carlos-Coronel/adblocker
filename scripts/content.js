@@ -2,19 +2,9 @@
 // Script inyectado en páginas de YouTube
 // =============================================================================
 
-/**
- * Log personalizado para depuración (usa el de blocker.js si está disponible)
- */
-function contentLog(level, ...args) {
-  if (typeof debugLog === 'function') {
-    debugLog(level, ...args);
-  } else {
-    const timestamp = new Date().toISOString().split('T')[1].split('Z')[0];
-    console.log(`[Content][${timestamp}][${level}]`, ...args);
-  }
-}
+const log = (...args) => window.debugLog ? window.debugLog(...args) : console.log('[Content]', ...args);
 
-console.log('🎯 Content script de bloqueador de anuncios cargado');
+console.log('🎯 Content script cargado');
 
 // Variables globales
 let isEnabled = true;
@@ -103,7 +93,7 @@ function startDOMObserver() {
       childList: true,
       subtree: true
     });
-    contentLog('INFO', '👁️ Observador de DOM iniciado');
+    log('INFO', '👁️ Observador de DOM iniciado');
   } else {
     // Reintentar pronto si aún no hay body
     setTimeout(startDOMObserver, 100);
@@ -186,7 +176,7 @@ function listenToNavigation() {
   const handleNavFinish = () => {
     window._isNavigating = false;
     const url = location.href;
-    contentLog('INFO', '📍 Navegación detectada:', url);
+    log('INFO', '📍 Navegación detectada:', url);
 
     cleanupObservers();
     startDOMObserver();
@@ -215,7 +205,7 @@ function checkForAds() {
   try {
     if (typeof skipVideoAd === 'function') skipVideoAd();
   } catch (e) {
-    contentLog('ERROR', 'Error en skipVideoAd:', e);
+    log('ERROR', 'Error en skipVideoAd:', e);
   }
   
     // 2. Otras tareas de limpieza (Prioridad MEDIA - cada 1s aprox)
@@ -230,7 +220,7 @@ function checkForAds() {
               if (typeof cleanupEmptySpaces === 'function') cleanupEmptySpaces();
               injectBypassButton();
           } catch (e) {
-              contentLog('ERROR', 'Error en tareas de limpieza profunda:', e);
+              log('ERROR', 'Error en tareas de limpieza profunda:', e);
           }
         };
 
@@ -243,7 +233,7 @@ function checkForAds() {
 
     const duration = performance.now() - startTime;
     if (duration > 20) { // Umbral ligeramente mayor para content script
-        contentLog('PERF', `checkForAds tomó ${duration.toFixed(2)}ms`);
+        log('PERF', `checkForAds tomó ${duration.toFixed(2)}ms`);
     }
 }
 
@@ -293,14 +283,14 @@ window.addEventListener('message', async (event) => {
   
   // Notificación de anuncio bloqueado
   if (event.data && event.data.type === 'ADBLOCK_AD_BLOCKED') {
-    contentLog('📩 Mensaje recibido del interceptor:', event.data.adType);
+    log('INFO', '📩 Mensaje del interceptor:', event.data.adType);
     notifyAdBlocked(event.data.adType);
   }
 
   // Detección de nuevo anuncio (dinámico)
   if (event.data && event.data.type === 'YT_AD_DETECTED') {
     const { ruleType, rule } = event.data;
-    contentLog(`🆕 Nuevo anuncio detectado (${ruleType}):`, rule);
+    log('INFO', `🆕 Nuevo anuncio detectado (${ruleType}):`, rule);
     chrome.runtime.sendMessage({
       action: 'addDynamicRule',
       ruleType: ruleType,

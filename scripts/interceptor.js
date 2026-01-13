@@ -17,89 +17,41 @@
     }
   }
 
-  const AD_DOMAINS = [
-    'googleads.g.doubleclick.net',
-    'static.doubleclick.net',
-    'googleadservices.com',
-    'googlesyndication.com',
-    'googleads4.g.doubleclick.net',
-    'adservice.google.com',
-    'doubleclick.net',
-    'pagead2.googlesyndication.com',
-    'ad.doubleclick.net',
-    'securepubads.g.doubleclick.net',
-    'stats.g.doubleclick.net',
-    'cm.g.doubleclick.net'
-  ];
-
-  const AD_URL_PATTERNS = [
-    /googleads/i,
-    /doubleclick/i,
-    /adservice/i,
-    /pagead/i,
-    /ad_break/i,
-    /adunit/i,
-    /ads\.js/i,
-    /\/v1\/player\/ad_break/i,
-    /youtube\.com\/pagead\//i,
-    /googlevideo\.com\/videoplayback\?.*&adformat=/i
-  ];
+  const AD_REGEX = /googleads|doubleclick|adservice|pagead|ad_break|adunit|ads\.js|\/v1\/player\/ad_break|youtube\.com\/pagead\/|googlevideo\.com\/videoplayback\?.*&adformat=/i;
 
   let dynamicDomains = [];
   let dynamicPatterns = [];
 
   // Escuchar reglas dinámicas
   window.addEventListener('message', (event) => {
-    if (event.source !== window) return;
-    if (event.data && event.data.type === 'DYNAMIC_RULES_DATA') {
+    if (event.source !== window || !event.data) return;
+    if (event.data.type === 'DYNAMIC_RULES_DATA') {
       const rules = event.data.rules;
       if (rules) {
         dynamicDomains = rules.domains || [];
         dynamicPatterns = (rules.patterns || []).map(p => {
           try { return new RegExp(p, 'i'); } catch(e) { return null; }
         }).filter(Boolean);
-        debugLog('INFO', '📦 Reglas dinámicas de red cargadas');
+        debugLog('INFO', '📦 Reglas dinámicas cargadas');
       }
     }
   });
-
-  // Solicitar reglas dinámicas al cargar
-  setTimeout(() => {
-    window.postMessage({ type: 'GET_DYNAMIC_RULES' }, '*');
-  }, 500);
 
   function isAdUrl(url) {
     if (!url) return false;
     const urlString = String(url);
     
-    // 1. Verificar listas estáticas
-    if (AD_DOMAINS.some(domain => urlString.includes(domain))) return true;
-    if (AD_URL_PATTERNS.some(pattern => pattern.test(urlString))) return true;
+    if (AD_REGEX.test(urlString)) return true;
+    if (dynamicDomains.some(d => urlString.includes(d))) return true;
+    if (dynamicPatterns.some(p => p.test(urlString))) return true;
     
-    // 2. Verificar reglas dinámicas
-    if (dynamicDomains.some(domain => urlString.includes(domain))) return true;
-    if (dynamicPatterns.some(pattern => pattern.test(urlString))) return true;
-    
-    // 3. Heurística para nuevos anuncios (auto-aprendizaje)
+    // Heurística auto-aprendizaje
     if (urlString.includes('googlevideo.com/videoplayback') && urlString.includes('&adformat=')) {
-      
-      // Si detectamos uno que no estaba en las listas, lo notificamos para guardarlo
-      if (!dynamicPatterns.some(p => p.test(urlString))) {
-        debugLog('INFO', '🔍 Nuevo patrón de anuncio detectado:', urlString);
-        // Intentar extraer un patrón útil (ej: el dominio o una parte fija)
-        const pattern = urlString.includes('googlevideo.com') ? 
-          'googlevideo\\.com\\/videoplayback\\?.*&adformat=' : 
-          urlString.split('?')[0];
-        
-        window.postMessage({ 
-          type: 'YT_AD_DETECTED', 
-          ruleType: 'patterns', 
-          rule: pattern 
-        }, '*');
-      }
+      debugLog('INFO', '🔍 Nuevo patrón detectado:', urlString);
+      const pattern = 'googlevideo\\.com\\/videoplayback\\?.*&adformat=';
+      window.postMessage({ type: 'YT_AD_DETECTED', ruleType: 'patterns', rule: pattern }, '*');
       return true;
     }
-
     return false;
   }
 
@@ -107,63 +59,38 @@
     if (!obj || typeof obj !== 'object') return { data: obj, modified: false };
     
     const startTime = performance.now();
-    const keysToPrune = new Set([
-      'adPlacements', 'playerAds', 'adSlots', 'adStepRenderer',
-      'adBreakService', 'adBreakRenderer', 'masthead',
-      'visitAdvertiserLink', 'interstitial', 'adBreakParams',
-      'adsV2', 'onTapCommand', 'adPlacement', 'playerAdRenderer'
-    ]);
+    const keysToPrune = ['adPlacements', 'playerAds', 'adSlots', 'adStepRenderer', 'adBreakService', 'adBreakRenderer', 'masthead', 'visitAdvertiserLink', 'interstitial', 'adBreakParams', 'adsV2', 'onTapCommand', 'adPlacement', 'playerAdRenderer'];
+    const keysSet = new Set(keysToPrune);
 
     let nodesProcessed = 0;
     let modified = false;
-    const MAX_NODES = 8000; 
-    const MAX_TIME = 15; // ms máximo por llamada
+    const MAX_NODES = 5000; 
+    const MAX_DEPTH = 10;
     const stack = [{ o: obj, d: 0 }];
 
     try {
-      while (stack.length > 0 && nodesProcessed < MAX_NODES) {
-        if (nodesProcessed % 100 === 0 && (performance.now() - startTime) > MAX_TIME) {
-          debugLog('WARN', 'pruneAdData interrumpido por tiempo');
-          break;
-        }
-
+      while (stack.length > 0 && nodesProcessed++ < MAX_NODES) {
         const { o, d } = stack.pop();
-        nodesProcessed++;
-
-        if (!o || typeof o !== 'object' || d > 12) continue; 
+        if (!o || typeof o !== 'object' || d > MAX_DEPTH) continue; 
 
         if (Array.isArray(o)) {
-          if (o.length > 50 && typeof o[0] !== 'object' && o[0] !== null) continue;
-          
           for (let i = o.length - 1; i >= 0; i--) {
-            if (o[i] && typeof o[i] === 'object') {
-              stack.push({ o: o[i], d: d + 1 });
-            }
+            if (o[i] && typeof o[i] === 'object') stack.push({ o: o[i], d: d + 1 });
           }
         } else {
           for (const key in o) {
-            if (keysToPrune.has(key)) {
-              if (Array.isArray(o[key])) {
-                if (o[key].length > 0) {
-                  o[key] = [];
-                  modified = true;
-                }
-              } else if (typeof o[key] === 'object' && o[key] !== null) {
-                if (Object.keys(o[key]).length > 0) {
-                  o[key] = {};
-                  modified = true;
-                }
-              } else {
-                delete o[key];
+            if (keysSet.has(key)) {
+              const val = o[key];
+              const isArr = Array.isArray(val);
+              const isEmpty = isArr ? val.length === 0 : (val === null || Object.keys(val).length === 0);
+              
+              if (!isEmpty) {
+                o[key] = isArr ? [] : {};
                 modified = true;
               }
             } else {
-              try {
-                const val = o[key];
-                if (val && typeof val === 'object') {
-                  stack.push({ o: val, d: d + 1 });
-                }
-              } catch (e) { }
+              const val = o[key];
+              if (val && typeof val === 'object') stack.push({ o: val, d: d + 1 });
             }
           }
         }
@@ -174,7 +101,7 @@
 
     const duration = performance.now() - startTime;
     if (duration > PERF_THRESHOLD) {
-      debugLog('PERF', `pruneAdData tomó ${duration.toFixed(2)}ms (${nodesProcessed} nodos, modificado: ${modified})`);
+      debugLog('PERF', `pruneAdData: ${duration.toFixed(2)}ms, nodos: ${nodesProcessed}, modificado: ${modified}`);
     }
     return { data: obj, modified };
   }

@@ -6,7 +6,6 @@
 const CONFIG = {
   STATS_KEY: 'adblock_stats',
   ENABLED_KEY: 'adblock_enabled',
-  WHITELIST_KEY: 'channel_whitelist',
   DYNAMIC_RULES_KEY: 'dynamic_ad_rules'
 };
 
@@ -31,7 +30,6 @@ chrome.runtime.onInstalled.addListener(async () => {
   const data = await chrome.storage.local.get([
     CONFIG.ENABLED_KEY,
     CONFIG.STATS_KEY,
-    CONFIG.WHITELIST_KEY,
     CONFIG.DYNAMIC_RULES_KEY
   ]);
   
@@ -50,10 +48,6 @@ chrome.runtime.onInstalled.addListener(async () => {
     };
   }
   
-  if (data[CONFIG.WHITELIST_KEY] === undefined) {
-    initialData[CONFIG.WHITELIST_KEY] = [];
-  }
-
   if (data[CONFIG.DYNAMIC_RULES_KEY] === undefined) {
     initialData[CONFIG.DYNAMIC_RULES_KEY] = INITIAL_DYNAMIC_RULES;
   }

@@ -12,12 +12,11 @@ function debugLog(level, ...args) {
   if (DEBUG_MODE) {
     const timestamp = new Date().toISOString().split('T')[1].split('Z')[0];
     const prefix = `[Blocker][${timestamp}][${level}]`;
-    if (level === 'ERROR') console.error(prefix, ...args);
-    else if (level === 'WARN') console.warn(prefix, ...args);
-    else if (level === 'PERF') console.debug(prefix, ...args);
-    else console.log(prefix, ...args);
+    const logger = level === 'ERROR' ? console.error : (level === 'WARN' ? console.warn : (level === 'PERF' ? console.debug : console.log));
+    logger(prefix, ...args);
   }
 }
+window.debugLog = debugLog; // Hacerlo disponible para content.js
 
 /**
  * Monitor de rendimiento (Watchdog) para detectar bloqueos del hilo principal
@@ -43,56 +42,16 @@ function debugLog(level, ...args) {
  * Selectores CSS de elementos publicitarios en YouTube (CORREGIDOS)
  */
 const AD_SELECTORS = [
-  // Anuncios en video
-  '.video-ads',
-  '.ytp-ad-module',
-  '.ytp-ad-overlay-container',
-  '.ytp-ad-text-overlay',
-  '.ytp-ad-player-overlay',
-  
-  // Anuncios en la página
-  'ytd-display-ad-renderer',
-  'ytd-promoted-sparkles-web-renderer',
-  'ytd-statement-banner-renderer',
-  'ytd-banner-promo-renderer',
-  'ytd-action-companion-ad-renderer',
-  'ytd-video-masthead-ad-v3-renderer',
-  'ytd-companion-slot-renderer',
-  'ytd-in-feed-ad-layout-renderer',
-  'ytd-player-legacy-desktop-watch-ads-renderer',
-  
-  // Anuncios en búsqueda y miniaturas
-  '.ytd-search-pyv-renderer',
-  'ytd-ad-slot-renderer',
-  'yt-mealbar-promo-renderer',
-  'yt-interaction-companion-ad-renderer',
-  
-  // Overlays y banners
-  '.ytd-popup-container',
-  '.ytd-promoted-video-renderer',
-  '#player-ads',
-  '.ytd-merch-shelf-renderer',
-  'ytd-ad-engagement-panel-renderer',
-  
-  // Bloqueo de avisos anti-adblock
-  'tp-yt-paper-dialog:has(ytd-enforcement-message-view-model)',
-  'yt-playability-error-supported-renderers:has(ytd-enforcement-message-view-model)',
-  
-  // Anuncios patrocinados - CORREGIDOS (más específicos)
-  '[class*="paid-content"]',
-  '[class*="advertisement"]',
-  '[aria-label*="Advertisement"]',
-  '[aria-label*="Sponsorship"]',
-  'ytd-ad-slot-renderer',
-  'ytd-in-feed-ad-layout-renderer',
-  'ad-button-view-model',
-  'top-landscape-image-layout-view-model',
-  '[class*="AdComponentHost"]',
-  '.ytp-ad-survey-container',
-  '.ytp-ad-action-interstitial',
-  '[id^="ad-text:"]',
-  '.ytp-ad-message-container',
-  'ytd-ad-engagement-panel-renderer'
+  '.video-ads', '.ytp-ad-module', '.ytp-ad-overlay-container', '.ytp-ad-text-overlay', '.ytp-ad-player-overlay',
+  'ytd-display-ad-renderer', 'ytd-promoted-sparkles-web-renderer', 'ytd-statement-banner-renderer', 'ytd-banner-promo-renderer',
+  'ytd-action-companion-ad-renderer', 'ytd-video-masthead-ad-v3-renderer', 'ytd-companion-slot-renderer', 'ytd-in-feed-ad-layout-renderer',
+  'ytd-player-legacy-desktop-watch-ads-renderer', '.ytd-search-pyv-renderer', 'ytd-ad-slot-renderer', 'yt-mealbar-promo-renderer',
+  'yt-interaction-companion-ad-renderer', '.ytd-popup-container', '.ytd-promoted-video-renderer', '#player-ads',
+  '.ytd-merch-shelf-renderer', 'ytd-ad-engagement-panel-renderer', 
+  'tp-yt-paper-dialog:has(ytd-enforcement-message-view-model)', 'yt-playability-error-supported-renderers:has(ytd-enforcement-message-view-model)',
+  '[class*="paid-content"]', '[class*="advertisement"]', '[aria-label*="Advertisement"]', '[aria-label*="Sponsorship"]',
+  'ad-button-view-model', 'top-landscape-image-layout-view-model', '[class*="AdComponentHost"]', '.ytp-ad-survey-container',
+  '.ytp-ad-action-interstitial', '[id^="ad-text:"]', '.ytp-ad-message-container'
 ];
 
 let dynamicSelectors = [];
@@ -265,76 +224,45 @@ function hideAdElements() {
   hideIterationCount++;
   
   const allSelectors = [...AD_SELECTORS, ...dynamicSelectors];
-  
   if (!combinedSelectorCache || allSelectors.length !== lastSelectorCount) {
     combinedSelectorCache = allSelectors.join(',');
     lastSelectorCount = allSelectors.length;
   }
   
-  // Cachear shadow hosts para evitar document.querySelector repetitivo
   if (!cachedShadowHosts || hideIterationCount % 10 === 0) {
     const shadowHostSelectors = ['ytd-app', '#movie_player', 'ytd-player', '.html5-video-player'];
     cachedShadowHosts = shadowHostSelectors.map(s => document.querySelector(s)).filter(h => h && h.shadowRoot);
   }
   
   try {
-    // 1. Buscar en el documento principal
-    let elements = Array.from(document.querySelectorAll(combinedSelectorCache));
-    
-    // 2. Buscar en Shadow DOM de contenedores críticos (solo si están cacheados)
+    const elements = new Set(document.querySelectorAll(combinedSelectorCache));
     cachedShadowHosts.forEach(host => {
-      try {
-        const shadowElements = host.shadowRoot.querySelectorAll(combinedSelectorCache);
-        if (shadowElements.length > 0) {
-          elements = elements.concat(Array.from(shadowElements));
-        }
-      } catch (e) {}
+      host.shadowRoot.querySelectorAll(combinedSelectorCache).forEach(el => elements.add(el));
     });
     
-    elements.forEach(element => {
-      if (element && element.style.display !== 'none') {
-        element.style.setProperty('display', 'none', 'important');
-        element.style.setProperty('visibility', 'hidden', 'important');
-        
-        if (!element.hasAttribute('data-ad-hidden')) {
-          element.setAttribute('data-ad-hidden', 'true');
+    elements.forEach(el => {
+      if (el.style.display !== 'none') {
+        el.style.setProperty('display', 'none', 'important');
+        if (!el.hasAttribute('data-ad-hidden')) {
+          el.setAttribute('data-ad-hidden', 'true');
           hiddenCount++;
         }
       }
     });
   } catch (error) {
-    // Fallback si falla el selector combinado
-    allSelectors.forEach(selector => {
-      try {
-        document.querySelectorAll(selector).forEach(el => {
-          if (el.style.display !== 'none') {
-             el.style.setProperty('display', 'none', 'important');
-             if (!el.hasAttribute('data-ad-hidden')) {
-               el.setAttribute('data-ad-hidden', 'true');
-               hiddenCount++;
-             }
-          }
-        });
-      } catch (e) {}
-    });
+    debugLog('ERROR', 'Error en hideAdElements:', error);
   }
   
   if (hiddenCount > 0) {
-    debugLog('INFO', `🙈 Ocultados ${hiddenCount} elementos publicitarios`);
+    debugLog('INFO', `🙈 Ocultados ${hiddenCount} elementos`);
     window.notifyAdBlocked?.('elements-hidden');
   }
 
   const duration = performance.now() - startTime;
-  if (duration > PERF_THRESHOLD) {
-    debugLog('PERF', `hideAdElements tomó ${duration.toFixed(2)}ms`);
-  }
+  if (duration > PERF_THRESHOLD) debugLog('PERF', `hideAdElements: ${duration.toFixed(2)}ms`);
 
-  // Ejecutar descubrimiento con baja prioridad
-  if (window.requestIdleCallback) {
-    window.requestIdleCallback(() => discoverNewAds(), { timeout: 1000 });
-  } else {
-    setTimeout(discoverNewAds, 500);
-  }
+  if (window.requestIdleCallback) window.requestIdleCallback(() => discoverNewAds(), { timeout: 1000 });
+  else setTimeout(discoverNewAds, 500);
 }
 
 /**
@@ -410,72 +338,27 @@ function hideElementSafely(el) {
  * Elimina overlays y popups publicitarios
  */
 function removeAdOverlays() {
-  try {
-    // Overlays de anuncios en el reproductor
-    const overlays = document.querySelectorAll(
-      '.ytp-ad-overlay-container, .ytp-ad-text-overlay'
-    );
-    
-    overlays.forEach(overlay => {
-      if (overlay.parentNode) {
-        overlay.parentNode.removeChild(overlay);
-        debugLog('INFO', '🗑️ Overlay publicitario eliminado');
-        window.notifyAdBlocked?.('overlay-removed');
-      }
-    });
-    
-    // Banners de promoción
-    const banners = document.querySelectorAll(
-      'ytd-banner-promo-renderer, ytd-statement-banner-renderer'
-    );
-    
-    banners.forEach(banner => {
-      if (banner.parentNode) {
-        banner.parentNode.removeChild(banner);
-        debugLog('INFO', '🗑️ Banner publicitario eliminado');
-      }
-    });
-  } catch (error) {
-    console.error('Error en removeAdOverlays:', error);
-  }
+  const selectors = '.ytp-ad-overlay-container, .ytp-ad-text-overlay, ytd-banner-promo-renderer, ytd-statement-banner-renderer';
+  document.querySelectorAll(selectors).forEach(el => el.remove());
 }
 
 /**
  * Limpia espacios vacíos dejados por anuncios bloqueados
  */
 function cleanupEmptySpaces() {
+  // Casi todo se maneja ahora por CSS con :has()
+  // Solo verificamos contenedores que podrían haber quedado vacíos y no captados por :has()
   const startTime = performance.now();
-  const containers = document.querySelectorAll(
-    'ytd-rich-item-renderer, ytd-grid-video-renderer, ytd-rich-section-renderer'
-  );
-  
   const adChildSelector = 'ytd-ad-slot-renderer, ytd-display-ad-renderer, ytd-promoted-sparkles-web-renderer, [class*="AdComponent"]';
-  const visibleContentSelector = 'img, video, [class*="thumbnail"], #video-title';
-
-  containers.forEach(container => {
-    if (container.style.display === 'none') return;
-
-    // 1. Verificar si contiene elementos explícitos de anuncios
-    const hasAdChild = container.querySelector(adChildSelector);
-    if (hasAdChild) {
+  
+  document.querySelectorAll('ytd-rich-item-renderer, ytd-grid-video-renderer').forEach(container => {
+    if (container.style.display !== 'none' && container.querySelector(adChildSelector)) {
       container.style.setProperty('display', 'none', 'important');
-      return;
-    }
-
-    // 2. Si el contenedor no tiene contenido visual legítimo, ocultarlo
-    const hasVisibleContent = container.querySelector(visibleContentSelector);
-    if (!hasVisibleContent) {
-      const text = container.textContent?.trim() || "";
-      if (text === "" || text.includes("Patrocinado") || text.includes("Sponsored") || text.length < 5) {
-        container.style.setProperty('display', 'none', 'important');
-      }
     }
   });
 
   const duration = performance.now() - startTime;
-  if (duration > PERF_THRESHOLD) {
-    debugLog('PERF', `cleanupEmptySpaces tomó ${duration.toFixed(2)}ms`);
-  }
+  if (duration > PERF_THRESHOLD) debugLog('PERF', `cleanupEmptySpaces: ${duration.toFixed(2)}ms`);
 }
 
 /**
