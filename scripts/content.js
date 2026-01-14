@@ -2,7 +2,13 @@
 // Script inyectado en páginas de YouTube
 // =============================================================================
 
-const log = (...args) => window.debugLog ? window.debugLog(...args) : console.log('[Content]', ...args);
+const DEBUG_MODE = false;
+const log = (...args) => {
+  if (DEBUG_MODE) {
+    const timestamp = new Date().toISOString().split('T')[1].split('Z')[0];
+    console.log(`[Content][${timestamp}]`, ...args);
+  }
+};
 
 function diagnosticLog(type, data) {
   if (window.diagnosticLog) {

@@ -2,7 +2,7 @@
 // Lógica principal de detección y bloqueo de anuncios
 // =============================================================================
 
-const DEBUG_MODE = true;
+const DEBUG_MODE = false;
 const PERF_THRESHOLD = 15; // ms (un poco más alto para el DOM)
 
 /**
@@ -53,16 +53,37 @@ window.diagnosticLog = diagnosticLog; // Hacerlo disponible
  * Selectores CSS de elementos publicitarios en YouTube (CORREGIDOS)
  */
 const AD_SELECTORS = [
+  // Video player ads
   '.video-ads', '.ytp-ad-module', '.ytp-ad-overlay-container', '.ytp-ad-text-overlay', '.ytp-ad-player-overlay',
+  '.ytp-ad-preview-container', '.ytp-ad-survey-container', '.ytp-ad-action-interstitial', '.ytp-ad-message-container',
+
+  // Banner and display ads
   'ytd-display-ad-renderer', 'ytd-promoted-sparkles-web-renderer', 'ytd-statement-banner-renderer', 'ytd-banner-promo-renderer',
   'ytd-action-companion-ad-renderer', 'ytd-video-masthead-ad-v3-renderer', 'ytd-companion-slot-renderer', 'ytd-in-feed-ad-layout-renderer',
-  'ytd-player-legacy-desktop-watch-ads-renderer', '.ytd-search-pyv-renderer', 'ytd-ad-slot-renderer', 'yt-mealbar-promo-renderer',
-  'yt-interaction-companion-ad-renderer', '.ytd-popup-container', '.ytd-promoted-video-renderer', '#player-ads',
-  '.ytd-merch-shelf-renderer', 'ytd-ad-engagement-panel-renderer', 
-  'tp-yt-paper-dialog:has(ytd-enforcement-message-view-model)', 'yt-playability-error-supported-renderers:has(ytd-enforcement-message-view-model)',
-  '[class*="paid-content"]', '[class*="advertisement"]', '[aria-label*="Advertisement"]', '[aria-label*="Sponsorship"]',
-  'ad-button-view-model', 'top-landscape-image-layout-view-model', '[class*="AdComponentHost"]', '.ytp-ad-survey-container',
-  '.ytp-ad-action-interstitial', '[id^="ad-text:"]', '.ytp-ad-message-container'
+  'ytd-ad-slot-renderer', 'ytd-ad-engagement-panel-renderer', 'ytd-ad-break-renderer',
+
+  // Search and feed ads
+  '.ytd-search-pyv-renderer', 'yt-mealbar-promo-renderer', 'yt-interaction-companion-ad-renderer',
+  '.ytd-promoted-video-renderer', '.ytd-merch-shelf-renderer', '#player-ads',
+
+  // Newer ad formats (2024-2025)
+  'ytd-ad-inline-playback-renderer', 'ytd-ad-video-renderer', 'ytd-ad-image-renderer',
+  'ytd-ad-text-renderer', 'ytd-ad-carousel-renderer', 'ytd-ad-leaderboard-renderer',
+  'ytd-ad-overlay-renderer', 'ytd-ad-skip-button-renderer',
+
+  // Popups and overlays
+  '.ytd-popup-container', 'tp-yt-paper-dialog:has(ytd-enforcement-message-view-model)',
+  'yt-playability-error-supported-renderers:has(ytd-enforcement-message-view-model)',
+
+  // Generic ad indicators
+  '[class*="paid-content"]', '[class*="advertisement"]', '[class*="sponsored"]', '[class*="promoted"]',
+  '[aria-label*="Advertisement"]', '[aria-label*="Sponsorship"]', '[aria-label*="Sponsored"]',
+  '[data-ad-type]', '[data-ad-unit]', '[data-ad-slot]',
+
+  // Legacy and misc
+  'ad-button-view-model', 'top-landscape-image-layout-view-model', '[class*="AdComponentHost"]',
+  '[id^="ad-text:"]', '.ytp-ad-image-overlay', '.ytp-ad-player-overlay-flyout-cta',
+  '.ytp-ad-player-overlay-instream-info', 'ytd-player-legacy-desktop-watch-ads-renderer'
 ];
 
 let dynamicSelectors = [];
