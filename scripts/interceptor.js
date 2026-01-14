@@ -3,19 +3,27 @@
 // =============================================================================
 
 (function() {
-  const DEBUG_MODE = true;
-  const PERF_THRESHOLD = 10; // ms
+const DEBUG_MODE = true;
+const PERF_THRESHOLD = 10; // ms
 
-  function debugLog(level, ...args) {
-    if (DEBUG_MODE) {
-      const timestamp = new Date().toISOString().split('T')[1].split('Z')[0];
-      const prefix = `[Interceptor][${timestamp}][${level}]`;
-      if (level === 'ERROR') console.error(prefix, ...args);
-      else if (level === 'WARN') console.warn(prefix, ...args);
-      else if (level === 'PERF') console.debug(prefix, ...args);
-      else console.log(prefix, ...args);
-    }
+function debugLog(level, ...args) {
+  if (DEBUG_MODE) {
+    const timestamp = new Date().toISOString().split('T')[1].split('Z')[0];
+    const prefix = `[Interceptor][${timestamp}][${level}]`;
+    if (level === 'ERROR') console.error(prefix, ...args);
+    else if (level === 'WARN') console.warn(prefix, ...args);
+    else if (level === 'PERF') console.debug(prefix, ...args);
+    else console.log(prefix, ...args);
   }
+}
+
+// Función específica para logging de diagnóstico de carga
+function diagnosticLog(type, data) {
+  if (DEBUG_MODE) {
+    const timestamp = new Date().toISOString().split('T')[1].split('Z')[0];
+    console.log(`[DIAGNOSTIC][${timestamp}][${type}]`, data);
+  }
+}
 
   function isChannelPage() {
     const path = window.location.pathname;
@@ -84,23 +92,24 @@
   }
 
   function pruneAdData(obj) {
-    if (!obj || typeof obj !== 'object') return { data: obj, modified: false };
-    if (isChannelPage()) return { data: obj, modified: false };
-    
+    if (!obj || typeof obj !== 'object') return { data: obj, modified: false, keysPruned: [] };
+    if (isChannelPage()) return { data: obj, modified: false, keysPruned: [] };
+
     const startTime = performance.now();
     const keysToPrune = ['adPlacements', 'playerAds', 'adSlots', 'adStepRenderer', 'adBreakService', 'adBreakRenderer', 'masthead', 'visitAdvertiserLink', 'interstitial', 'adBreakParams', 'adsV2', 'onTapCommand', 'adPlacement', 'playerAdRenderer'];
     const keysSet = new Set(keysToPrune);
 
     let nodesProcessed = 0;
     let modified = false;
-    const MAX_NODES = 5000; 
+    const MAX_NODES = 5000;
     const MAX_DEPTH = 10;
     const stack = [{ o: obj, d: 0 }];
+    const keysPruned = [];
 
     try {
       while (stack.length > 0 && nodesProcessed++ < MAX_NODES) {
         const { o, d } = stack.pop();
-        if (!o || typeof o !== 'object' || d > MAX_DEPTH) continue; 
+        if (!o || typeof o !== 'object' || d > MAX_DEPTH) continue;
 
         if (Array.isArray(o)) {
           for (let i = o.length - 1; i >= 0; i--) {
@@ -112,10 +121,11 @@
               const val = o[key];
               const isArr = Array.isArray(val);
               const isEmpty = isArr ? val.length === 0 : (val === null || Object.keys(val).length === 0);
-              
+
               if (!isEmpty) {
                 o[key] = isArr ? [] : {};
                 modified = true;
+                keysPruned.push(key);
               }
             } else {
               const val = o[key];
@@ -132,7 +142,7 @@
     if (duration > PERF_THRESHOLD) {
       debugLog('PERF', `pruneAdData: ${duration.toFixed(2)}ms, nodos: ${nodesProcessed}, modificado: ${modified}`);
     }
-    return { data: obj, modified };
+    return { data: obj, modified, keysPruned };
   }
 
   function notifyAdBlocked(type) {
@@ -150,6 +160,7 @@
     
     if (isAdUrl(urlString)) {
       debugLog('INFO', '🚫 Request bloqueado (Fetch):', urlString);
+      diagnosticLog('BLOCKED_FETCH', { url: urlString, reason: 'ad-url-detected', stack: new Error().stack });
       notifyAdBlocked('request-blocked-fetch');
       return Promise.resolve(new Response('', {
         status: 200, statusText: 'OK',
@@ -166,6 +177,7 @@
           let json = await clonedResponse.json();
           const result = pruneAdData(json);
           if (result.modified) {
+            diagnosticLog('JSON_PRUNED_FETCH', { url: urlString, keysPruned: result.keysPruned || 'unknown', originalSize: JSON.stringify(json).length, prunedSize: JSON.stringify(result.data).length });
             return new Response(JSON.stringify(result.data), {
               status: response.status, statusText: response.statusText, headers: response.headers
             });
@@ -200,6 +212,7 @@
     const url = xhr._url || '';
     if (isAdUrl(url)) {
       debugLog('INFO', '🚫 Request bloqueado (XHR):', url);
+      diagnosticLog('BLOCKED_XHR', { url: url, reason: 'ad-url-detected', stack: new Error().stack });
       notifyAdBlocked('request-blocked-xhr');
       setTimeout(() => {
         try {
@@ -222,6 +235,7 @@
             const json = JSON.parse(xhr.responseText);
             const result = pruneAdData(json);
             if (result.modified) {
+              diagnosticLog('JSON_PRUNED_XHR', { url: url, keysPruned: result.keysPruned, originalSize: JSON.stringify(json).length, prunedSize: JSON.stringify(result.data).length });
               const responseText = JSON.stringify(result.data);
               try {
                 Object.defineProperty(xhr, 'responseText', { value: responseText, configurable: true });
@@ -249,6 +263,9 @@
     if (val) {
       const result = pruneAdData(val);
       val = result.data;
+      if (result.modified) {
+        diagnosticLog('GLOBAL_PROP_PRUNED_INITIAL', { propName, keysPruned: result.keysPruned, originalSize: JSON.stringify(window[propName]).length, prunedSize: JSON.stringify(val).length });
+      }
     }
 
     try {
@@ -258,6 +275,9 @@
           debugLog('INFO', `📦 Variable global interceptada y podada: ${propName}`);
           const result = pruneAdData(newVal);
           val = result.data;
+          if (result.modified) {
+            diagnosticLog('GLOBAL_PROP_PRUNED_SET', { propName, keysPruned: result.keysPruned, originalSize: JSON.stringify(newVal).length, prunedSize: JSON.stringify(val).length });
+          }
         },
         configurable: true,
         enumerable: true

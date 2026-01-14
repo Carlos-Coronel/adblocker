@@ -19,6 +19,17 @@ function debugLog(level, ...args) {
 window.debugLog = debugLog; // Hacerlo disponible para content.js
 
 /**
+ * Función específica para logging de diagnóstico de carga
+ */
+function diagnosticLog(type, data) {
+  if (DEBUG_MODE) {
+    const timestamp = new Date().toISOString().split('T')[1].split('Z')[0];
+    console.log(`[DIAGNOSTIC][${timestamp}][${type}]`, data);
+  }
+}
+window.diagnosticLog = diagnosticLog; // Hacerlo disponible
+
+/**
  * Monitor de rendimiento (Watchdog) para detectar bloqueos del hilo principal
  */
 (function setupWatchdog() {
@@ -325,12 +336,19 @@ function hideElementSafely(el) {
 
   if (selector && !AD_SELECTORS.includes(selector) && !dynamicSelectors.includes(selector)) {
     debugLog('INFO', '✨ Guardando nuevo selector dinámico:', selector);
-    chrome.runtime.sendMessage({
-      action: 'addDynamicRule',
-      ruleType: 'selectors',
-      rule: selector
-    }).catch(() => {});
-    dynamicSelectors.push(selector);
+    try {
+      chrome.runtime.sendMessage({
+        action: 'addDynamicRule',
+        ruleType: 'selectors',
+        rule: selector
+      }).then(() => {
+        dynamicSelectors.push(selector);
+      }).catch((error) => {
+        diagnosticLog('DYNAMIC_RULE_SAVE_FAILED', { selector, error: error.message });
+      });
+    } catch (error) {
+      diagnosticLog('DYNAMIC_RULE_SEND_FAILED', { selector, error: error.message });
+    }
   }
 }
 
@@ -502,8 +520,19 @@ function updateRootClasses() {
 }
 
 // Inicializar clases y estilos
-updateRootClasses();
-injectStyles();
+try {
+  diagnosticLog('INIT_UPDATE_ROOT_CLASSES', { isChannel: isChannelPage(), isSearch: isSearchPage(), url: window.location.href });
+  updateRootClasses();
+} catch (e) {
+  diagnosticLog('INIT_ERROR_UPDATE_ROOT_CLASSES', { error: e.message, stack: e.stack });
+}
+
+try {
+  injectStyles();
+  diagnosticLog('INIT_STYLES_INJECTED', { hasHead: !!document.head, hasDocumentElement: !!document.documentElement });
+} catch (e) {
+  diagnosticLog('INIT_ERROR_INJECT_STYLES', { error: e.message, stack: e.stack });
+}
 
 /**
  * Convierte una URL de YouTube a su versión con guion (yout-ube.com)

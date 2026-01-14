@@ -4,7 +4,16 @@
 
 const log = (...args) => window.debugLog ? window.debugLog(...args) : console.log('[Content]', ...args);
 
+function diagnosticLog(type, data) {
+  if (window.diagnosticLog) {
+    window.diagnosticLog(type, data);
+  } else {
+    console.log(`[DIAGNOSTIC][${new Date().toISOString().split('T')[1].split('Z')[0]}][${type}]`, data);
+  }
+}
+
 console.log('🎯 Content script cargado');
+diagnosticLog('CONTENT_SCRIPT_LOADED', { url: window.location.href, readyState: document.readyState });
 
 // Variables globales
 let isEnabled = true;
@@ -32,15 +41,19 @@ function waitForBody(timeout = 5000) {
  */
 async function initialize() {
   try {
+    diagnosticLog('CONTENT_INIT_START', { url: window.location.href, readyState: document.readyState });
+
     // Verificar si el bloqueador está habilitado
     const data = await chrome.storage.local.get('adblock_enabled');
     isEnabled = data.adblock_enabled !== false;
+    diagnosticLog('CONTENT_ADBLOCK_ENABLED', { isEnabled, storageData: data });
 
     // Gestionar clase de habilitación global para CSS
     document.documentElement.classList.toggle('yt-adblock-enabled', isEnabled);
 
     if (!isEnabled) {
       console.log('⏸️ Bloqueador deshabilitado');
+      diagnosticLog('CONTENT_DISABLED', { reason: 'adblock_disabled' });
       return;
     }
 
@@ -48,28 +61,37 @@ async function initialize() {
     listenToNavigation();
 
     // Actualizar clases de canal (definida en blocker.js)
-    if (window.updateRootClasses) window.updateRootClasses();
+    if (window.updateRootClasses) {
+      window.updateRootClasses();
+      diagnosticLog('CONTENT_ROOT_CLASSES_UPDATED', { isChannel: window.isChannelPage?.(), isSearch: window.isSearchPage?.() });
+    }
 
     if (window.isChannelPage && window.isChannelPage()) {
       console.log('⏭️ Página de canal detectada, bloqueador en pausa');
+      diagnosticLog('CONTENT_PAUSED', { reason: 'channel_page' });
       return;
     }
 
     if (window.isSearchPage && window.isSearchPage()) {
       console.log('⏭️ Página de búsqueda detectada, bloqueador en pausa');
+      diagnosticLog('CONTENT_PAUSED', { reason: 'search_page' });
       return;
     }
 
     // Asegurar body
-    await waitForBody().catch(() => {});
+    const bodyResult = await waitForBody().catch(() => {});
+    diagnosticLog('CONTENT_BODY_WAIT', { hasBody: !!bodyResult, bodyNodeType: bodyResult?.nodeType });
 
     // Iniciar observador de DOM
     startDOMObserver();
 
     // Iniciar verificación periódica
     startPeriodicCheck();
+
+    diagnosticLog('CONTENT_INIT_COMPLETE', { observerStarted: !!observer, periodicCheckStarted: !!checkInterval });
   } catch (e) {
     console.error('Error al inicializar content script:', e);
+    diagnosticLog('CONTENT_INIT_ERROR', { error: e.message, stack: e.stack });
   }
 }
 
