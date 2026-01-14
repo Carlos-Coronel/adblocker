@@ -55,6 +55,11 @@ async function initialize() {
       return;
     }
 
+    if (window.isSearchPage && window.isSearchPage()) {
+      console.log('⏭️ Página de búsqueda detectada, bloqueador en pausa');
+      return;
+    }
+
     // Asegurar body
     await waitForBody().catch(() => {});
 
@@ -137,7 +142,7 @@ function startPeriodicCheck() {
   let timerId = null;
 
   function loop() {
-    if (!isEnabled || (window.isChannelPage && window.isChannelPage())) return;
+    if (!isEnabled || (window.isChannelPage && window.isChannelPage()) || (window.isSearchPage && window.isSearchPage())) return;
 
     // Ajustar frecuencia según el contexto
     let delay = baseDelay;
@@ -200,6 +205,11 @@ function listenToNavigation() {
       return;
     }
 
+    if (window.isSearchPage && window.isSearchPage()) {
+      log('INFO', '⏭️ Navegado a una búsqueda, bloqueador pausado');
+      return;
+    }
+
     startDOMObserver();
     startPeriodicCheck();
     setTimeout(() => { scheduleCheck(300); }, 1000);
@@ -214,6 +224,7 @@ function listenToNavigation() {
     if (window.updateRootClasses) window.updateRootClasses();
     cleanupObservers();
     if (window.isChannelPage && window.isChannelPage()) return;
+    if (window.isSearchPage && window.isSearchPage()) return;
     setTimeout(() => { scheduleCheck(500); }, 500);
   });
 }
@@ -223,6 +234,7 @@ function listenToNavigation() {
  */
 function checkForAds() {
   if (window.isChannelPage && window.isChannelPage()) return;
+  if (window.isSearchPage && window.isSearchPage()) return;
   const now = Date.now();
   const startTime = performance.now();
   
