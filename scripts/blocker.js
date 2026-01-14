@@ -2,7 +2,7 @@
 // Lógica principal de detección y bloqueo de anuncios
 // =============================================================================
 
-const DEBUG_MODE = false;
+const DEBUG_MODE = true;
 const PERF_THRESHOLD = 15; // ms (un poco más alto para el DOM)
 
 /**

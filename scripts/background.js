@@ -19,7 +19,7 @@ const INITIAL_DYNAMIC_RULES = {
 // Inicializar al instalar la extensión
 chrome.runtime.onInstalled.addListener(async () => {
   console.log('🚫 Bloqueador de YouTube instalado o actualizado');
-  
+
   // Asegurarse de que navigationPreload esté desactivado si no se usa
   try {
     if (self.registration && self.registration.navigationPreload) {
@@ -32,14 +32,14 @@ chrome.runtime.onInstalled.addListener(async () => {
     CONFIG.STATS_KEY,
     CONFIG.DYNAMIC_RULES_KEY
   ]);
-  
+
   const initialData = {};
-  
+
   // Solo inicializar si no existen para no borrar datos previos en actualizaciones
   if (data[CONFIG.ENABLED_KEY] === undefined) {
     initialData[CONFIG.ENABLED_KEY] = true;
   }
-  
+
   if (data[CONFIG.STATS_KEY] === undefined) {
     initialData[CONFIG.STATS_KEY] = {
       totalBlocked: 0,
@@ -47,16 +47,32 @@ chrome.runtime.onInstalled.addListener(async () => {
       lastReset: new Date().toDateString()
     };
   }
-  
+
   if (data[CONFIG.DYNAMIC_RULES_KEY] === undefined) {
     initialData[CONFIG.DYNAMIC_RULES_KEY] = INITIAL_DYNAMIC_RULES;
   }
-  
+
   if (Object.keys(initialData).length > 0) {
     await chrome.storage.local.set(initialData);
   }
-  
+
   console.log('✅ Bloqueador inicializado correctamente');
+});
+
+// Escuchar coincidencias de reglas DNR para contar bloqueos
+chrome.declarativeNetRequest.onRuleMatchedDebug.addListener(async (info) => {
+  // Solo contar si la extensión está habilitada
+  const data = await chrome.storage.local.get(CONFIG.ENABLED_KEY);
+  if (data[CONFIG.ENABLED_KEY] === false) return;
+
+  // Incrementar estadísticas para bloqueos DNR
+  await handleAdBlocked({
+    type: 'dnr-blocked',
+    url: info.request.url,
+    timestamp: Date.now()
+  });
+
+  console.log('🚫 DNR bloqueado:', info.request.url);
 });
 
 /**
@@ -113,32 +129,36 @@ async function getDynamicRules() {
  * Maneja el evento de anuncio bloqueado
  */
 async function handleAdBlocked(details) {
+  console.log('📊 Anuncio bloqueado:', details.type, 'URL:', details.url);
+
   const data = await chrome.storage.local.get(CONFIG.STATS_KEY);
   const stats = data[CONFIG.STATS_KEY] || {
     totalBlocked: 0,
     todayBlocked: 0,
     lastReset: new Date().toDateString()
   };
-  
+
   // Resetear contador diario si es un nuevo día
   const today = new Date().toDateString();
   if (stats.lastReset !== today) {
     stats.todayBlocked = 0;
     stats.lastReset = today;
   }
-  
+
   stats.totalBlocked++;
   stats.todayBlocked++;
-  
+
   await chrome.storage.local.set({ [CONFIG.STATS_KEY]: stats });
-  
+
   // Actualizar badge con el contador
-  chrome.action.setBadgeText({ 
-    text: stats.todayBlocked.toString() 
+  chrome.action.setBadgeText({
+    text: stats.todayBlocked.toString()
   });
-  chrome.action.setBadgeBackgroundColor({ 
-    color: '#FF0000' 
+  chrome.action.setBadgeBackgroundColor({
+    color: '#FF0000'
   });
+
+  console.log('📈 Stats actualizadas - Hoy:', stats.todayBlocked, 'Total:', stats.totalBlocked);
 }
 
 /**

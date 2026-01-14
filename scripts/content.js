@@ -2,7 +2,7 @@
 // Script inyectado en páginas de YouTube
 // =============================================================================
 
-const DEBUG_MODE = false;
+// DEBUG_MODE is declared in blocker.js
 const log = (...args) => {
   if (DEBUG_MODE) {
     const timestamp = new Date().toISOString().split('T')[1].split('Z')[0];
