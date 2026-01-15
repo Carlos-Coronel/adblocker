@@ -60,7 +60,14 @@ const AD_SELECTORS = [
   // Banner and display ads
   'ytd-display-ad-renderer', 'ytd-promoted-sparkles-web-renderer', 'ytd-statement-banner-renderer', 'ytd-banner-promo-renderer',
   'ytd-action-companion-ad-renderer', 'ytd-video-masthead-ad-v3-renderer', 'ytd-companion-slot-renderer', 'ytd-in-feed-ad-layout-renderer',
-  'ytd-ad-slot-renderer', 'ytd-ad-engagement-panel-renderer', 'ytd-ad-break-renderer',
+  'ytd-ad-slot-renderer', 'ytd-ad-engagement-panel-renderer', 'ytd-ad-break-renderer', 'ytd-brand-video-singleton-renderer',
+  '#masthead-ad', '#masthead-banner', 'ytd-rich-section-renderer:has(ytd-statement-banner-renderer)',
+  'ytd-rich-section-renderer:has(ytd-in-feed-ad-layout-renderer)',
+  'ytd-rich-item-renderer:has(ytd-ad-slot-renderer)',
+  'ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer)',
+  'ytd-rich-item-renderer:has(.yt-lockup-view-model__content-image[href*="googleadservices.com"])',
+  'ytd-rich-item-renderer:has(a[href*="/pagead/aclk"])',
+  'ytd-rich-grid-renderer > #contents > ytd-rich-item-renderer:has(ytd-ad-slot-renderer)',
 
   // Search and feed ads
   '.ytd-search-pyv-renderer', 'yt-mealbar-promo-renderer', 'yt-interaction-companion-ad-renderer',
@@ -70,6 +77,8 @@ const AD_SELECTORS = [
   'ytd-ad-inline-playback-renderer', 'ytd-ad-video-renderer', 'ytd-ad-image-renderer',
   'ytd-ad-text-renderer', 'ytd-ad-carousel-renderer', 'ytd-ad-leaderboard-renderer',
   'ytd-ad-overlay-renderer', 'ytd-ad-skip-button-renderer',
+  'ytd-video-masthead-ad-advertiser-info-renderer', 'ytd-video-masthead-ad-v3-renderer',
+  'div#masthead-ad', 'ytd-carousel-ad-renderer',
 
   // Popups and overlays
   '.ytd-popup-container', 'tp-yt-paper-dialog:has(ytd-enforcement-message-view-model)',
@@ -302,22 +311,37 @@ function hideAdElements() {
  */
 function discoverNewAds() {
   const startTime = performance.now();
-  const adTerms = ['Anuncio', 'Publicidad', 'Sponsored', 'Sponsoreado', 'Promocionado', 'Patrocinado'];
+  const adTerms = ['Anuncio', 'Publicidad', 'Sponsored', 'Sponsoreado', 'Promocionado', 'Patrocinado', 'Werbung', 'Promoted'];
   
   // 1. Buscar primero elementos con badges conocidos (más rápido que texto completo)
-  const knownAdBadges = document.querySelectorAll('.ytd-badge-supported-renderer:not([data-ad-checked]), [class*="badge-style-type-ad"]:not([data-ad-checked])');
+  const knownAdBadges = document.querySelectorAll('.ytd-badge-supported-renderer:not([data-ad-checked]), [class*="badge-style-type-ad"]:not([data-ad-checked]), ytd-ad-slot-renderer:not([data-ad-checked]), ytd-in-feed-ad-layout-renderer:not([data-ad-checked]), badge-shape:not([data-ad-checked])');
   
   knownAdBadges.forEach(badge => {
     badge.setAttribute('data-ad-checked', 'true');
     // Encontrar el contenedor (renderer)
-    const container = badge.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-rich-section-renderer, ytd-ad-slot-renderer');
+    const container = badge.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-rich-section-renderer, ytd-ad-slot-renderer, ytm-shorts-lockup-view-model');
     if (container && container.style.display !== 'none' && !container.hasAttribute('data-ad-hidden')) {
-      debugLog('INFO', '🎯 Anuncio detectado por badge:', container.tagName);
+      const text = badge.textContent.trim().toLowerCase();
+      const isAdBadge = adTerms.some(term => text.includes(term.toLowerCase()));
+      if (isAdBadge || badge.tagName === 'YTD-AD-SLOT-RENDERER' || badge.tagName === 'YTD-IN-FEED-AD-LAYOUT-RENDERER') {
+        debugLog('INFO', '🎯 Anuncio detectado por badge:', container.tagName, text);
+        hideElementSafely(container);
+      }
+    }
+  });
+
+  // 2. Buscar por enlaces a servicios de anuncios
+  const adLinks = document.querySelectorAll('a[href*="googleadservices.com/pagead/aclk"]:not([data-ad-checked])');
+  adLinks.forEach(link => {
+    link.setAttribute('data-ad-checked', 'true');
+    const container = link.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytm-shorts-lockup-view-model');
+    if (container && container.style.display !== 'none' && !container.hasAttribute('data-ad-hidden')) {
+      debugLog('INFO', '🎯 Anuncio detectado por enlace:', container.tagName);
       hideElementSafely(container);
     }
   });
 
-  // 2. Heurística de texto (solo en elementos no procesados y con moderación)
+  // 3. Heurística de texto (solo en elementos no procesados y con moderación)
   // Limitar a los primeros N elementos para evitar bloqueos prolongados
   const potentialAds = Array.from(document.querySelectorAll('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-ad-slot-renderer'))
                         .filter(el => el.style.display !== 'none' && !el.hasAttribute('data-ad-hidden'))
@@ -484,6 +508,9 @@ function injectStyles() {
     /* Limpiar espacios vacíos (Rich Grid y otros) */
     html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytd-rich-item-renderer:has(ytd-display-ad-renderer),
     html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytd-rich-item-renderer:has(ytd-ad-slot-renderer),
+    html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer),
+    html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytd-rich-item-renderer:has(.yt-lockup-view-model__content-image[href*="googleadservices.com"]),
+    html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytd-rich-item-renderer:has(a[href*="/pagead/aclk"]),
     html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytd-rich-item-renderer:has(ytd-promoted-sparkles-web-renderer),
     html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytd-rich-item-renderer:has([class*="AdComponent"]),
     html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytd-rich-section-renderer:has(ytd-statement-banner-renderer),

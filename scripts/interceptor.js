@@ -74,7 +74,10 @@ function diagnosticLog(type, data) {
 
   function isAdUrl(url) {
     if (!url) return false;
-    if (isChannelPage()) return false;
+    // No bloqueamos anuncios en páginas de canal o búsqueda si así está configurado,
+    // pero las peticiones de red a menudo son globales.
+    // YouTube a veces usa peticiones de anuncios incluso en canales.
+    
     const urlString = String(url);
     
     if (AD_REGEX.test(urlString)) return true;
@@ -93,10 +96,17 @@ function diagnosticLog(type, data) {
 
   function pruneAdData(obj) {
     if (!obj || typeof obj !== 'object') return { data: obj, modified: false, keysPruned: [] };
-    if (isChannelPage()) return { data: obj, modified: false, keysPruned: [] };
-
+    
+    const isChannel = isChannelPage();
     const startTime = performance.now();
-    const keysToPrune = ['adPlacements', 'playerAds', 'adSlots', 'adStepRenderer', 'adBreakService', 'adBreakRenderer', 'masthead', 'visitAdvertiserLink', 'interstitial', 'adBreakParams', 'adsV2', 'onTapCommand', 'adPlacement', 'playerAdRenderer'];
+    const keysToPrune = [
+      'adPlacements', 'playerAds', 'adSlots', 'adStepRenderer', 
+      'adBreakService', 'adBreakRenderer', 'masthead', 
+      'visitAdvertiserLink', 'interstitial', 'adBreakParams', 
+      'adsV2', 'onTapCommand', 'adPlacement', 'playerAdRenderer',
+      'promotedSparklesWebRenderer', 'compactPromotedVideoRenderer',
+      'inFeedAdLayoutRenderer', 'adSlotRenderer'
+    ];
     const keysSet = new Set(keysToPrune);
 
     let nodesProcessed = 0;
@@ -112,12 +122,19 @@ function diagnosticLog(type, data) {
         if (!o || typeof o !== 'object' || d > MAX_DEPTH) continue;
 
         if (Array.isArray(o)) {
+          // Si estamos en un canal, somos más permisivos con los elementos de la lista
+          // Pero si es un adPlacement puro, lo quitamos
           for (let i = o.length - 1; i >= 0; i--) {
             if (o[i] && typeof o[i] === 'object') stack.push({ o: o[i], d: d + 1 });
           }
         } else {
           for (const key in o) {
             if (keysSet.has(key)) {
+              // Si es un canal, solo podamos si es masthead o adPlacements críticos
+              if (isChannel && (key !== 'masthead' && key !== 'adPlacements' && key !== 'playerAds')) {
+                continue;
+              }
+
               const val = o[key];
               const isArr = Array.isArray(val);
               const isEmpty = isArr ? val.length === 0 : (val === null || Object.keys(val).length === 0);

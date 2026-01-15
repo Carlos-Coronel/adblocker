@@ -69,6 +69,7 @@ chrome.declarativeNetRequest.onRuleMatchedDebug.addListener(async (info) => {
   await handleAdBlocked({
     type: 'dnr-blocked',
     url: info.request.url,
+    tabId: info.request.tabId,
     timestamp: Date.now()
   });
 
@@ -80,7 +81,9 @@ chrome.declarativeNetRequest.onRuleMatchedDebug.addListener(async (info) => {
  */
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'adBlocked') {
-    handleAdBlocked(request.details);
+    const details = request.details || {};
+    details.tabId = sender.tab ? sender.tab.id : 'unknown';
+    handleAdBlocked(details);
     sendResponse({ success: true });
   } else if (request.action === 'getStats') {
     getStats().then(stats => sendResponse(stats));
@@ -125,10 +128,26 @@ async function getDynamicRules() {
   return data[CONFIG.DYNAMIC_RULES_KEY] || INITIAL_DYNAMIC_RULES;
 }
 
+// Mapa para rastrear el último bloqueo por pestaña y evitar duplicados rápidos
+const lastBlockedTimeByTab = new Map();
+const THROTTLE_MS = 2000; // 2 segundos de ventana para agrupar bloqueos similares
+
 /**
  * Maneja el evento de anuncio bloqueado
  */
 async function handleAdBlocked(details) {
+  const tabId = details.tabId || 'unknown';
+  const now = Date.now();
+  const lastTime = lastBlockedTimeByTab.get(tabId) || 0;
+
+  // Si el último bloqueo en esta pestaña fue hace menos de THROTTLE_MS, 
+  // no incrementamos el contador global, pero podemos loguearlo
+  if (now - lastTime < THROTTLE_MS) {
+    console.log('⏳ Bloqueo ignorado por el contador (Throttled):', details.type);
+    return;
+  }
+
+  lastBlockedTimeByTab.set(tabId, now);
   console.log('📊 Anuncio bloqueado:', details.type, 'URL:', details.url);
 
   const data = await chrome.storage.local.get(CONFIG.STATS_KEY);
