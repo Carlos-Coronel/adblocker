@@ -66,7 +66,12 @@ const AD_SELECTORS = [
   'ytd-rich-item-renderer:has(ytd-ad-slot-renderer)',
   'ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer)',
   'ytd-rich-item-renderer:has(.yt-lockup-view-model__content-image[href*="googleadservices.com"])',
+  'ytd-rich-item-renderer:has(badge-shape.yt-badge-shape--ad)',
+  'ytd-rich-item-renderer:has(.yt-badge-shape--ad)',
+  'ytd-rich-item-renderer:has(a[href*="googleadservices.com"])',
   'ytd-rich-item-renderer:has(a[href*="/pagead/aclk"])',
+  'ytd-rich-item-renderer:has(yt-lockup-view-model:has(a[href*="googleadservices.com"]))',
+  'ytd-rich-item-renderer:has(yt-lockup-view-model:has(a[href*="/pagead/aclk"]))',
   'ytd-rich-grid-renderer > #contents > ytd-rich-item-renderer:has(ytd-ad-slot-renderer)',
 
   // Search and feed ads
@@ -331,13 +336,15 @@ function discoverNewAds() {
   });
 
   // 2. Buscar por enlaces a servicios de anuncios
-  const adLinks = document.querySelectorAll('a[href*="googleadservices.com/pagead/aclk"]:not([data-ad-checked])');
+  const adLinks = document.querySelectorAll('a[href*="googleadservices.com/pagead/aclk"]:not([data-ad-checked]), a[href*="/pagead/aclk"]:not([data-ad-checked])');
   adLinks.forEach(link => {
     link.setAttribute('data-ad-checked', 'true');
-    const container = link.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytm-shorts-lockup-view-model');
+    const container = link.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytm-shorts-lockup-view-model, yt-lockup-view-model');
     if (container && container.style.display !== 'none' && !container.hasAttribute('data-ad-hidden')) {
-      debugLog('INFO', '🎯 Anuncio detectado por enlace:', container.tagName);
-      hideElementSafely(container);
+      // Si el contenedor es yt-lockup-view-model, intentar encontrar un ancestro más grande si existe
+      const biggerContainer = container.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer') || container;
+      debugLog('INFO', '🎯 Anuncio detectado por enlace:', biggerContainer.tagName);
+      hideElementSafely(biggerContainer);
     }
   });
 
