@@ -7,6 +7,7 @@ const elements = {
   totalCount: document.getElementById("totalCount"),
   refreshBtn: document.getElementById("refreshBtn"),
   bypassBtn: document.getElementById("bypassBtn"),
+  deepCleanBtn: document.getElementById("deepCleanBtn"),
   whitelistBtn: document.getElementById("whitelistBtn"),
   resetBtn: document.getElementById("resetBtn"),
 };
@@ -155,6 +156,30 @@ function setupEventListeners() {
       }
     } catch (error) {
       console.error("Error al redirigir:", error);
+    }
+  });
+
+  // Botón de Limpieza Profunda
+  elements.deepCleanBtn.addEventListener("click", async () => {
+    elements.deepCleanBtn.disabled = true;
+    const originalContent = elements.deepCleanBtn.innerHTML;
+    elements.deepCleanBtn.innerHTML = "<span>⏳</span> Limpiando...";
+
+    try {
+      const response = await chrome.runtime.sendMessage({ action: "deepClean" });
+      if (response && response.success) {
+        showNotification(`Limpieza completada. Se eliminaron ${response.cookiesRemoved} rastreadores.`, "success");
+      } else {
+        showNotification("Error durante la limpieza", "error");
+      }
+    } catch (error) {
+      console.error("Error en limpieza profunda:", error);
+      showNotification("Error de comunicación", "error");
+    } finally {
+      setTimeout(() => {
+        elements.deepCleanBtn.disabled = false;
+        elements.deepCleanBtn.innerHTML = originalContent;
+      }, 1000);
     }
   });
 

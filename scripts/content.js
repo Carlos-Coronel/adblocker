@@ -94,12 +94,98 @@ async function initialize() {
     // Iniciar verificación periódica
     startPeriodicCheck();
 
+    // Limpiar almacenamiento si se detecta persistencia (opcional, una vez por carga)
+    if (isEnabled && location.pathname === '/') {
+      clearAdStorage();
+    }
+
     diagnosticLog('CONTENT_INIT_COMPLETE', { observerStarted: !!observer, periodicCheckStarted: !!checkInterval });
   } catch (e) {
     console.error('Error al inicializar content script:', e);
     diagnosticLog('CONTENT_INIT_ERROR', { error: e.message, stack: e.stack });
   }
 }
+
+/**
+ * Limpia el almacenamiento local y de sesión relacionado con anuncios
+ */
+function clearAdStorage() {
+  try {
+    const keysToRemove = [
+      'yt-remote-connected-devices',
+      'yt-remote-device-id',
+      'ytidbv1',
+      'yt-player-headers-readable'
+    ];
+    
+    // Limpiar localStorage (solo claves sospechosas para no desloguear)
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.includes('ad') || key.includes('promo') || keysToRemove.includes(key))) {
+        localStorage.removeItem(key);
+      }
+    }
+    
+    // Limpiar sessionStorage completamente es más seguro
+    sessionStorage.clear();
+    
+    log('INFO', '🧹 Almacenamiento de anuncios limpiado');
+  } catch (e) {
+    console.error('Error al limpiar almacenamiento:', e);
+  }
+}
+
+/**
+ * Escucha cambios en la navegación SPA de YouTube (Siempre activo)
+ */
+function listenToNavigation() {
+  // ... (existing implementation)
+}
+
+// Escuchar mensajes del background script
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'clearStorage') {
+    clearAdStorage();
+    sendResponse({ success: true });
+  }
+});
+
+/**
+ * Limpia el almacenamiento local y de sesión relacionado con anuncios
+ */
+function clearAdStorage() {
+  try {
+    const keysToRemove = [
+      'yt-remote-connected-devices',
+      'yt-remote-device-id',
+      'ytidbv1',
+      'yt-player-headers-readable'
+    ];
+    
+    // Limpiar localStorage (solo claves sospechosas para no desloguear)
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.includes('ad') || key.includes('promo') || keysToRemove.includes(key))) {
+        localStorage.removeItem(key);
+      }
+    }
+    
+    // Limpiar sessionStorage completamente es más seguro
+    sessionStorage.clear();
+    
+    log('INFO', '🧹 Almacenamiento de anuncios limpiado');
+  } catch (e) {
+    console.error('Error al limpiar almacenamiento:', e);
+  }
+}
+
+// Escuchar mensajes del background script
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'clearStorage') {
+    clearAdStorage();
+    sendResponse({ success: true });
+  }
+});
 
 /**
  * Inicia el observador de mutaciones del DOM

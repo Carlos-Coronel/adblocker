@@ -105,7 +105,8 @@ function diagnosticLog(type, data) {
       'visitAdvertiserLink', 'interstitial', 'adBreakParams', 
       'adsV2', 'onTapCommand', 'adPlacement', 'playerAdRenderer',
       'promotedSparklesWebRenderer', 'compactPromotedVideoRenderer',
-      'inFeedAdLayoutRenderer', 'adSlotRenderer'
+      'inFeedAdLayoutRenderer', 'adSlotRenderer', 'engagementPanels',
+      'mastheadAdRenderer', 'brandVideoSingletonRenderer'
     ];
     const keysSet = new Set(keysToPrune);
 
@@ -133,6 +134,26 @@ function diagnosticLog(type, data) {
               // Si es un canal, solo podamos si es masthead o adPlacements críticos
               if (isChannel && (key !== 'masthead' && key !== 'adPlacements' && key !== 'playerAds')) {
                 continue;
+              }
+
+              // Poda especial para engagementPanels (solo si contienen anuncios)
+              if (key === 'engagementPanels') {
+                const panels = o[key];
+                if (Array.isArray(panels)) {
+                  const filteredPanels = panels.filter(panel => {
+                    const str = JSON.stringify(panel).toLowerCase();
+                    const isAd = str.includes('ads-') || str.includes('adplacement') || str.includes('sponsored') || str.includes('promoted');
+                    // No filtrar paneles de "Transcripción" o "Capítulos"
+                    const isLegit = str.includes('transcript') || str.includes('chapter');
+                    return !isAd || isLegit;
+                  });
+                  if (filteredPanels.length !== panels.length) {
+                    o[key] = filteredPanels;
+                    modified = true;
+                    keysPruned.push(key);
+                  }
+                  continue;
+                }
               }
 
               const val = o[key];

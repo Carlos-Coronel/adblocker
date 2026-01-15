@@ -100,8 +100,53 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   } else if (request.action === 'getDynamicRules') {
     getDynamicRules().then(rules => sendResponse(rules));
     return true;
+  } else if (request.action === 'deepClean') {
+    performDeepClean().then(result => sendResponse(result));
+    return true;
   }
 });
+
+/**
+ * Realiza una limpieza profunda de cookies de rastreo y almacenamiento
+ */
+async function performDeepClean() {
+  console.log('🧹 Iniciando limpieza profunda...');
+  
+  try {
+    // 1. Limpiar cookies de dominios publicitarios conocidos
+    const adDomains = [
+      'googleads.g.doubleclick.net',
+      'googleadservices.com',
+      'googlesyndication.com',
+      'doubleclick.net',
+      'adservice.google.com'
+    ];
+
+    let cookiesRemoved = 0;
+    for (const domain of adDomains) {
+      const cookies = await chrome.cookies.getAll({ domain });
+      for (const cookie of cookies) {
+        const protocol = cookie.secure ? 'https:' : 'http:';
+        const url = `${protocol}//${cookie.domain}${cookie.path}`;
+        await chrome.cookies.remove({ name: cookie.name, url });
+        cookiesRemoved++;
+      }
+    }
+
+    console.log(`✅ Se eliminaron ${cookiesRemoved} cookies de rastreo`);
+
+    // 2. Notificar a las pestañas de YouTube para limpiar almacenamiento local
+    const tabs = await chrome.tabs.query({ url: '*://*.youtube.com/*' });
+    for (const tab of tabs) {
+      chrome.tabs.sendMessage(tab.id, { action: 'clearStorage' }).catch(() => {});
+    }
+
+    return { success: true, cookiesRemoved };
+  } catch (error) {
+    console.error('❌ Error en limpieza profunda:', error);
+    return { success: false, error: error.message };
+  }
+}
 
 /**
  * Añade una regla dinámica a la lista
