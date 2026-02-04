@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bloqueador de Anuncios YouTube</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>
+                <span class="logo">🚫</span>
+                Bloqueador YouTube
+            </h1>
+            <p>Navega sin interrupciones</p>
+        </div>
+
+        <!-- Toggle Switch -->
+        <div class="toggle-container">
+            <span class="toggle-label">Bloqueador Activo</span>
+            <label class="toggle-switch">
+                <input type="checkbox" id="toggleEnabled" checked>
+                <span class="slider"></span>
+            </label>
+        </div>
+
+        <!-- Status Badge -->
+        <center>
+            <div class="status-badge active" id="statusBadge">
+                <span class="status-indicator"></span>
+                <span id="statusText">Protección Activa</span>
+            </div>
+        </center>
+
+        <!-- Stats Cards -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="icon">📊</div>
+                <div class="value" id="todayCount">0</div>
+                <div class="label">Hoy</div>
+            </div>
+            <div class="stat-card">
+                <div class="icon">🎯</div>
+                <div class="value" id="totalCount">0</div>
+                <div class="label">Total</div>
+            </div>
+        </div>
+
+        <!-- Buttons -->
+        <div class="button-group">
+            <button class="btn btn-primary" id="refreshBtn">
+                <span>🔄</span>
+                Actualizar Estadísticas
+            </button>
+            <button class="btn btn-warning" id="bypassBtn" style="background: #ff0000; color: white;">
+                <span>🛡️</span>
+                Ver sin anuncios (yout-ube)
+            </button>
+            <button class="btn btn-info" id="deepCleanBtn" style="background: #673AB7; color: white;">
+                <span>🧹</span>
+                Limpieza Profunda (Anti-Banners)
+            </button>
+            <button class="btn btn-danger" id="resetBtn">
+                <span>🗑️</span>
+                Resetear Contador
+            </button>
+        </div>
+
+        <!-- Info Section -->
+        <div class="info-section">
+            <strong>💡 Consejos:</strong>
+            • Los anuncios se bloquean automáticamente<br>
+            • Las estadísticas se guardan localmente
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+        v1.0.0 | Bloqueador de Anuncios YouTube<br>
+        Hecho con ❤️ para una mejor experiencia
+    </div>
+    <script src="popup.js"></script>
+</body>
+
+</html>
