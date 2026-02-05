@@ -85,6 +85,12 @@ async function initialize() {
       diagnosticLog('CONTENT_PAUSED', { reason: 'search_page' });
       return;
     }
+    
+    if (location.pathname.startsWith('/shorts')) {
+      console.log('⏭️ Página de Shorts detectada, bloqueador en pausa');
+      diagnosticLog('CONTENT_PAUSED', { reason: 'shorts_page' });
+      return;
+    }
 
     // Asegurar body
     const bodyResult = await waitForBody().catch(() => {});
@@ -258,7 +264,7 @@ function startPeriodicCheck() {
   let timerId = null;
 
   function loop() {
-    if (!isEnabled || (window.isChannelPage && window.isChannelPage()) || (window.isSearchPage && window.isSearchPage())) return;
+    if (!isEnabled || (window.isChannelPage && window.isChannelPage()) || (window.isSearchPage && window.isSearchPage()) || location.pathname.startsWith('/shorts')) return;
 
     // Ajustar frecuencia según el contexto
     let delay = baseDelay;
@@ -325,6 +331,11 @@ function listenToNavigation() {
       log('INFO', '⏭️ Navegado a una búsqueda, bloqueador pausado');
       return;
     }
+    
+    if (location.pathname.startsWith('/shorts')) {
+      log('INFO', '⏭️ Navegado a Shorts, bloqueador pausado');
+      return;
+    }
 
     startDOMObserver();
     startPeriodicCheck();
@@ -341,6 +352,7 @@ function listenToNavigation() {
     cleanupObservers();
     if (window.isChannelPage && window.isChannelPage()) return;
     if (window.isSearchPage && window.isSearchPage()) return;
+    if (location.pathname.startsWith('/shorts')) return;
     setTimeout(() => { scheduleCheck(500); }, 500);
   });
 }
@@ -351,6 +363,8 @@ function listenToNavigation() {
 function checkForAds() {
   if (window.isChannelPage && window.isChannelPage()) return;
   if (window.isSearchPage && window.isSearchPage()) return;
+  if (location.pathname.startsWith('/shorts')) return; // Skip processing on Shorts page
+  
   const now = Date.now();
   const startTime = performance.now();
   

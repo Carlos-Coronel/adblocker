@@ -267,6 +267,13 @@ function hideAdElements() {
   let hiddenCount = 0;
   hideIterationCount++;
   
+  // Skip processing if we're on the Shorts page to prevent loop
+  if (location.pathname.startsWith('/shorts')) {
+    const duration = performance.now() - startTime;
+    if (duration > PERF_THRESHOLD) debugLog('PERF', `hideAdElements: ${duration.toFixed(2)}ms (skipped Shorts)`);
+    return;
+  }
+  
   const allSelectors = [...AD_SELECTORS, ...dynamicSelectors];
   
   if (!cachedShadowHosts || hideIterationCount % 10 === 0) {
