@@ -3,7 +3,7 @@
 // =============================================================================
 
 (function() {
-const DEBUG_MODE = false;
+const DEBUG_MODE = true;
 const PERF_THRESHOLD = 10; // ms
 
 function debugLog(level, ...args) {

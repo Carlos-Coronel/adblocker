@@ -258,6 +258,8 @@ let lastSelectorCount = 0;
 let cachedShadowHosts = null;
 
 let hideIterationCount = 0;
+let lastHideTime = 0;
+const HIDE_THROTTLE = 2000; // Throttle hide operations to once every 2 seconds
 
 /**
  * Oculta elementos publicitarios del DOM
@@ -266,6 +268,15 @@ function hideAdElements() {
   const startTime = performance.now();
   let hiddenCount = 0;
   hideIterationCount++;
+  
+  // Throttle hide operations to prevent infinite loop
+  const now = Date.now();
+  if (now - lastHideTime < HIDE_THROTTLE) {
+    const duration = performance.now() - startTime;
+    if (duration > PERF_THRESHOLD) debugLog('PERF', `hideAdElements: ${duration.toFixed(2)}ms (throttled)`);
+    return;
+  }
+  lastHideTime = now;
   
   // Skip processing if we're on the Shorts page to prevent loop
   if (location.pathname.startsWith('/shorts')) {
