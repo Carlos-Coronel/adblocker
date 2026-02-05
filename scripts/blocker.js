@@ -83,8 +83,8 @@ const AD_SELECTORS = [
   'ytd-video-masthead-ad-advertiser-info-renderer', 'ytd-video-masthead-ad-v3-renderer',
   'div#masthead-ad', 'ytd-carousel-ad-renderer',
 
-  // Popups and overlays
-  '.ytd-popup-container', 'tp-yt-paper-dialog:has(ytd-enforcement-message-view-model)',
+  // Popups and overlays - Only target specific ad-related popups
+  'tp-yt-paper-dialog:has(ytd-enforcement-message-view-model)',
   'yt-playability-error-supported-renderers:has(ytd-enforcement-message-view-model)',
 
   // Generic ad indicators
