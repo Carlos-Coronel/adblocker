@@ -95,7 +95,17 @@ const AD_SELECTORS = [
   // Legacy and misc
   'ad-button-view-model', 'top-landscape-image-layout-view-model', '[class*="AdComponentHost"]',
   '[id^="ad-text:"]', '.ytp-ad-image-overlay', '.ytp-ad-player-overlay-flyout-cta',
-  '.ytp-ad-player-overlay-instream-info', 'ytd-player-legacy-desktop-watch-ads-renderer'
+  '.ytp-ad-player-overlay-instream-info', 'ytd-player-legacy-desktop-watch-ads-renderer',
+  
+  // YouTube Shorts specific ad selectors
+  'ytm-shorts-lockup-view-model:has(ytd-ad-slot-renderer)',
+  'ytm-shorts-lockup-view-model:has(badge-shape.yt-badge-shape--ad)',
+  'ytm-shorts-lockup-view-model:has([class*="ad-"])',
+  'ytm-shorts-lockup-view-model:has(a[href*="googleadservices.com"])',
+  'ytm-shorts-lockup-view-model:has(a[href*="/pagead/aclk"])',
+  'ytm-shorts-ad-renderer',
+  'ytm-shorts-promoted-renderer',
+  'ytm-shorts-ad-overlay-renderer'
 ];
 
 let dynamicSelectors = [];
@@ -278,12 +288,7 @@ function hideAdElements() {
   }
   lastHideTime = now;
   
-  // Skip processing if we're on the Shorts page to prevent loop
-  if (location.pathname.startsWith('/shorts')) {
-    const duration = performance.now() - startTime;
-    if (duration > PERF_THRESHOLD) debugLog('PERF', `hideAdElements: ${duration.toFixed(2)}ms (skipped Shorts)`);
-    return;
-  }
+  // Shorts pages are now processed normally
   
   const allSelectors = [...AD_SELECTORS, ...dynamicSelectors];
   
@@ -374,7 +379,7 @@ function discoverNewAds() {
 
   // 3. Heurística de texto (solo en elementos no procesados y con moderación)
   // Limitar a los primeros N elementos para evitar bloqueos prolongados
-  const potentialAds = Array.from(document.querySelectorAll('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-ad-slot-renderer'))
+  const potentialAds = Array.from(document.querySelectorAll('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-ad-slot-renderer, ytm-shorts-lockup-view-model'))
                         .filter(el => el.style.display !== 'none' && !el.hasAttribute('data-ad-hidden'))
                         .slice(0, 10); // Solo 10 por ciclo para no saturar
   
@@ -445,7 +450,7 @@ function cleanupEmptySpaces() {
   const startTime = performance.now();
   const adChildSelector = 'ytd-ad-slot-renderer, ytd-display-ad-renderer, ytd-promoted-sparkles-web-renderer, [class*="AdComponent"]';
   
-  document.querySelectorAll('ytd-rich-item-renderer, ytd-grid-video-renderer').forEach(container => {
+  document.querySelectorAll('ytd-rich-item-renderer, ytd-grid-video-renderer, ytm-shorts-lockup-view-model').forEach(container => {
     if (container.style.display !== 'none' && container.querySelector(adChildSelector)) {
       container.style.setProperty('display', 'none', 'important');
     }
@@ -536,7 +541,7 @@ function injectStyles() {
       display: none !important;
     }
 
-    /* Limpiar espacios vacíos (Rich Grid y otros) */
+    /* Limpiar espacios vacíos (Rich Grid, Shorts y otros) */
     html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytd-rich-item-renderer:has(ytd-display-ad-renderer),
     html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytd-rich-item-renderer:has(ytd-ad-slot-renderer),
     html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytd-rich-item-renderer:has(ytd-in-feed-ad-layout-renderer),
@@ -547,7 +552,12 @@ function injectStyles() {
     html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytd-rich-section-renderer:has(ytd-statement-banner-renderer),
     html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytd-rich-section-renderer:has(ytd-in-feed-ad-layout-renderer),
     html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytd-rich-section-renderer:has(ytd-ad-slot-renderer),
-    html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytd-grid-video-renderer:has(ytd-ad-slot-renderer) {
+    html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytd-grid-video-renderer:has(ytd-ad-slot-renderer),
+    html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytm-shorts-lockup-view-model:has(ytd-ad-slot-renderer),
+    html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytm-shorts-lockup-view-model:has(badge-shape.yt-badge-shape--ad),
+    html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytm-shorts-lockup-view-model:has([class*="ad-"]),
+    html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytm-shorts-lockup-view-model:has(a[href*="googleadservices.com"]),
+    html.yt-adblock-enabled:not(.yt-channel-page):not(.yt-search-page) ytm-shorts-lockup-view-model:has(a[href*="/pagead/aclk"]) {
       display: none !important;
     }
 

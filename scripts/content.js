@@ -86,11 +86,7 @@ async function initialize() {
       return;
     }
     
-    if (location.pathname.startsWith('/shorts')) {
-      console.log('⏭️ Página de Shorts detectada, bloqueador en pausa');
-      diagnosticLog('CONTENT_PAUSED', { reason: 'shorts_page' });
-      return;
-    }
+    // Shorts pages are now processed normally
 
     // Asegurar body
     const bodyResult = await waitForBody().catch(() => {});
@@ -264,7 +260,7 @@ function startPeriodicCheck() {
   let timerId = null;
 
   function loop() {
-    if (!isEnabled || (window.isChannelPage && window.isChannelPage()) || (window.isSearchPage && window.isSearchPage()) || location.pathname.startsWith('/shorts')) return;
+    if (!isEnabled || (window.isChannelPage && window.isChannelPage()) || (window.isSearchPage && window.isSearchPage())) return;
 
     // Ajustar frecuencia según el contexto
     let delay = baseDelay;
@@ -332,10 +328,7 @@ function listenToNavigation() {
       return;
     }
     
-    if (location.pathname.startsWith('/shorts')) {
-      log('INFO', '⏭️ Navegado a Shorts, bloqueador pausado');
-      return;
-    }
+    // Shorts pages are now processed normally
 
     startDOMObserver();
     startPeriodicCheck();
@@ -350,10 +343,10 @@ function listenToNavigation() {
     window._isNavigating = false;
     if (window.updateRootClasses) window.updateRootClasses();
     cleanupObservers();
-    if (window.isChannelPage && window.isChannelPage()) return;
-    if (window.isSearchPage && window.isSearchPage()) return;
-    if (location.pathname.startsWith('/shorts')) return;
-    setTimeout(() => { scheduleCheck(500); }, 500);
+  if (window.isChannelPage && window.isChannelPage()) return;
+  if (window.isSearchPage && window.isSearchPage()) return;
+  // Shorts pages are now processed normally
+  setTimeout(() => { scheduleCheck(500); }, 500);
   });
 }
 
@@ -363,7 +356,7 @@ function listenToNavigation() {
 function checkForAds() {
   if (window.isChannelPage && window.isChannelPage()) return;
   if (window.isSearchPage && window.isSearchPage()) return;
-  if (location.pathname.startsWith('/shorts')) return; // Skip processing on Shorts page
+  // Shorts pages are now processed normally
   
   const now = Date.now();
   const startTime = performance.now();
