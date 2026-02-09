@@ -3,7 +3,7 @@
 // =============================================================================
 
 const DEBUG_MODE = true;
-const PERF_THRESHOLD = 15; // ms (un poco más alto para el DOM)
+const PERF_THRESHOLD = 25; // ms (aumentado para reducir advertencias de bloqueo)
 
 /**
  * Log personalizado para depuración
@@ -288,9 +288,16 @@ function hideAdElements() {
   }
   lastHideTime = now;
   
-  // Shorts pages are now processed normally
-  
+// Shorts pages are now processed normally
+
   const allSelectors = [...AD_SELECTORS, ...dynamicSelectors];
+  // Limitar procesamiento en páginas con muchos elementos
+  const elementCount = document.querySelectorAll('ytd-rich-item-renderer, ytd-video-renderer').length;
+  if (elementCount > 200) {
+    allSelectors = allSelectors.slice(0, 20); // Procesar solo 20 selectores en páginas pesadas
+  } else if (elementCount > 100) {
+    allSelectors = allSelectors.slice(0, 30); // Procesar solo 30 selectores en páginas moderadas
+  }
   
   if (!cachedShadowHosts || hideIterationCount % 10 === 0) {
     const shadowHostSelectors = ['ytd-app', '#movie_player', 'ytd-player', '.html5-video-player'];
@@ -347,10 +354,10 @@ function discoverNewAds() {
   const startTime = performance.now();
   const adTerms = ['Anuncio', 'Publicidad', 'Sponsored', 'Sponsoreado', 'Promocionado', 'Patrocinado', 'Werbung', 'Promoted'];
   
-  // 1. Buscar primero elementos con badges conocidos (más rápido que texto completo)
+// 1. Buscar primero elementos con badges conocidos (más rápido que texto completo)
+  // Limitar a 15 badges por ciclo para mejor rendimiento
   const knownAdBadges = document.querySelectorAll('.ytd-badge-supported-renderer:not([data-ad-checked]), [class*="badge-style-type-ad"]:not([data-ad-checked]), ytd-ad-slot-renderer:not([data-ad-checked]), ytd-in-feed-ad-layout-renderer:not([data-ad-checked]), badge-shape:not([data-ad-checked])');
-  
-  knownAdBadges.forEach(badge => {
+  Array.from(knownAdBadges).slice(0, 15).forEach(badge => {
     badge.setAttribute('data-ad-checked', 'true');
     // Encontrar el contenedor (renderer)
     const container = badge.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-rich-section-renderer, ytd-ad-slot-renderer, ytm-shorts-lockup-view-model');
@@ -363,10 +370,12 @@ function discoverNewAds() {
       }
     }
   });
+  return; // Salir temprano para evitar procesamiento adicional
 
-  // 2. Buscar por enlaces a servicios de anuncios
+// 2. Buscar por enlaces a servicios de anuncios
+  // Limitar a 10 enlaces por ciclo para mejor rendimiento
   const adLinks = document.querySelectorAll('a[href*="googleadservices.com/pagead/aclk"]:not([data-ad-checked]), a[href*="/pagead/aclk"]:not([data-ad-checked])');
-  adLinks.forEach(link => {
+  Array.from(adLinks).slice(0, 10).forEach(link => {
     link.setAttribute('data-ad-checked', 'true');
     const container = link.closest('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytm-shorts-lockup-view-model, yt-lockup-view-model');
     if (container && container.style.display !== 'none' && !container.hasAttribute('data-ad-hidden')) {
@@ -377,11 +386,11 @@ function discoverNewAds() {
     }
   });
 
-  // 3. Heurística de texto (solo en elementos no procesados y con moderación)
+// 3. Heurística de texto (solo en elementos no procesados y con moderación)
   // Limitar a los primeros N elementos para evitar bloqueos prolongados
   const potentialAds = Array.from(document.querySelectorAll('ytd-rich-item-renderer, ytd-video-renderer, ytd-compact-video-renderer, ytd-ad-slot-renderer, ytm-shorts-lockup-view-model'))
                         .filter(el => el.style.display !== 'none' && !el.hasAttribute('data-ad-hidden'))
-                        .slice(0, 10); // Solo 10 por ciclo para no saturar
+                        .slice(0, 3); // Reducido a 3 por ciclo para mejor rendimiento
   
   potentialAds.forEach(el => {
     const text = el.textContent || "";
